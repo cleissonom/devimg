@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -26,6 +27,8 @@ pub struct ManifestOutput {
     pub source_bytes: u64,
     pub output_path: String,
     pub preset: String,
+    #[serde(default = "unknown_fit")]
+    pub fit: String,
     pub width: u32,
     pub height: u32,
     pub format: String,
@@ -58,6 +61,90 @@ impl Manifest {
     pub fn output_bytes_total(&self) -> u64 {
         self.outputs.iter().map(|output| output.bytes).sum()
     }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ManifestExport {
+    pub version: u32,
+    pub generated_at: String,
+    pub config_hash: String,
+    pub sources: Vec<ManifestExportSource>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ManifestExportSource {
+    pub source_path: String,
+    pub source_hash: String,
+    pub source_width: u32,
+    pub source_height: u32,
+    pub source_bytes: u64,
+    pub variants: Vec<ManifestExportVariant>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ManifestExportVariant {
+    pub src: String,
+    pub output_path: String,
+    pub preset: String,
+    pub fit: String,
+    pub width: u32,
+    pub height: u32,
+    pub format: String,
+    pub bytes: u64,
+    pub hash: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ManifestExportOptions {
+    pub strip_prefix: Option<String>,
+    pub url_prefix: String,
+}
+
+pub fn export_manifest(manifest: &Manifest, options: &ManifestExportOptions) -> ManifestExport {
+    let mut sources = BTreeMap::<String, ManifestExportSource>::new();
+    for output in &manifest.outputs {
+        let source = sources
+            .entry(output.source_path.clone())
+            .or_insert_with(|| ManifestExportSource {
+                source_path: output.source_path.clone(),
+                source_hash: output.source_hash.clone(),
+                source_width: output.source_width,
+                source_height: output.source_height,
+                source_bytes: output.source_bytes,
+                variants: Vec::new(),
+            });
+        source.variants.push(ManifestExportVariant {
+            src: manifest_variant_src(&output.output_path, options),
+            output_path: output.output_path.clone(),
+            preset: output.preset.clone(),
+            fit: output.fit.clone(),
+            width: output.width,
+            height: output.height,
+            format: output.format.clone(),
+            bytes: output.bytes,
+            hash: output.hash.clone(),
+        });
+    }
+
+    ManifestExport {
+        version: manifest.version,
+        generated_at: manifest.generated_at.clone(),
+        config_hash: manifest.config_hash.clone(),
+        sources: sources.into_values().collect(),
+    }
+}
+
+pub fn manifest_export_to_json(manifest: &Manifest, options: &ManifestExportOptions) -> String {
+    let document = export_manifest(manifest, options);
+    serde_json::to_string_pretty(&document).expect("manifest export serialization cannot fail")
+        + "\n"
+}
+
+pub fn manifest_export_to_typescript(
+    manifest: &Manifest,
+    options: &ManifestExportOptions,
+) -> String {
+    export_to_typescript(&export_manifest(manifest, options))
 }
 
 pub fn write_manifest(path: &Path, manifest: &Manifest) -> Result<()> {
@@ -112,6 +199,10 @@ fn unknown_generated_at() -> String {
     "unknown".to_string()
 }
 
+fn unknown_fit() -> String {
+    "unknown".to_string()
+}
+
 fn generated_at() -> String {
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -120,9 +211,130 @@ fn generated_at() -> String {
     format!("unix:{seconds}")
 }
 
+fn manifest_variant_src(output_path: &str, options: &ManifestExportOptions) -> String {
+    let path = output_path.replace('\\', "/");
+    let stripped = options
+        .strip_prefix
+        .as_deref()
+        .and_then(|prefix| strip_path_prefix(&path, prefix))
+        .unwrap_or(path);
+    join_url_prefix(&options.url_prefix, &stripped)
+}
+
+fn strip_path_prefix(path: &str, prefix: &str) -> Option<String> {
+    let prefix = prefix.replace('\\', "/");
+    let prefix = prefix.trim_matches('/');
+    if prefix.is_empty() {
+        return Some(path.trim_start_matches('/').to_string());
+    }
+    if path == prefix {
+        return Some(String::new());
+    }
+    path.strip_prefix(&format!("{prefix}/"))
+        .map(ToString::to_string)
+}
+
+fn join_url_prefix(url_prefix: &str, path: &str) -> String {
+    let prefix = url_prefix.replace('\\', "/");
+    let prefix = prefix.trim_end_matches('/');
+    let path = path.trim_start_matches('/');
+    if prefix.is_empty() {
+        if url_prefix.starts_with('/') {
+            format!("/{path}")
+        } else {
+            path.to_string()
+        }
+    } else if path.is_empty() {
+        prefix.to_string()
+    } else {
+        format!("{prefix}/{path}")
+    }
+}
+
+fn export_to_typescript(export: &ManifestExport) -> String {
+    let mut out = String::new();
+    out.push_str("// Generated by devimg. Do not edit by hand.\n");
+    out.push_str("export const DEVIMG_MANIFEST = {\n");
+    push_ts_number_field(&mut out, 2, "version", u64::from(export.version), true);
+    push_ts_string_field(&mut out, 2, "generated_at", &export.generated_at, true);
+    push_ts_string_field(&mut out, 2, "config_hash", &export.config_hash, true);
+    out.push_str("  sources: [\n");
+    for (source_index, source) in export.sources.iter().enumerate() {
+        out.push_str("    {\n");
+        push_ts_string_field(&mut out, 6, "source_path", &source.source_path, true);
+        push_ts_string_field(&mut out, 6, "source_hash", &source.source_hash, true);
+        push_ts_number_field(
+            &mut out,
+            6,
+            "source_width",
+            u64::from(source.source_width),
+            true,
+        );
+        push_ts_number_field(
+            &mut out,
+            6,
+            "source_height",
+            u64::from(source.source_height),
+            true,
+        );
+        push_ts_number_field(&mut out, 6, "source_bytes", source.source_bytes, true);
+        out.push_str("      variants: [\n");
+        for (variant_index, variant) in source.variants.iter().enumerate() {
+            out.push_str("        {\n");
+            push_ts_string_field(&mut out, 10, "src", &variant.src, true);
+            push_ts_string_field(&mut out, 10, "output_path", &variant.output_path, true);
+            push_ts_string_field(&mut out, 10, "preset", &variant.preset, true);
+            push_ts_string_field(&mut out, 10, "fit", &variant.fit, true);
+            push_ts_number_field(&mut out, 10, "width", u64::from(variant.width), true);
+            push_ts_number_field(&mut out, 10, "height", u64::from(variant.height), true);
+            push_ts_string_field(&mut out, 10, "format", &variant.format, true);
+            push_ts_number_field(&mut out, 10, "bytes", variant.bytes, true);
+            push_ts_string_field(&mut out, 10, "hash", &variant.hash, false);
+            out.push_str("        }");
+            if variant_index + 1 != source.variants.len() {
+                out.push(',');
+            }
+            out.push('\n');
+        }
+        out.push_str("      ]\n");
+        out.push_str("    }");
+        if source_index + 1 != export.sources.len() {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    out.push_str("  ]\n");
+    out.push_str("} as const\n");
+    out
+}
+
+fn push_ts_string_field(out: &mut String, indent: usize, key: &str, value: &str, comma: bool) {
+    let value = serde_json::to_string(value).expect("string serialization cannot fail");
+    push_ts_field(out, indent, key, &value, comma);
+}
+
+fn push_ts_number_field(out: &mut String, indent: usize, key: &str, value: u64, comma: bool) {
+    push_ts_field(out, indent, key, &value.to_string(), comma);
+}
+
+fn push_ts_field(out: &mut String, indent: usize, key: &str, value: &str, comma: bool) {
+    let prefix = " ".repeat(indent);
+    let suffix = if comma { "," } else { "" };
+    let line = format!("{prefix}{key}: {value}{suffix}");
+    if key == "output_path" && line.len() > 100 {
+        out.push_str(&format!("{prefix}{key}:\n{prefix}  {value}{suffix}\n"));
+    } else {
+        out.push_str(&line);
+        out.push('\n');
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{manifest_to_json, Manifest, ManifestOutput};
+    use super::{
+        export_manifest, manifest_export_to_json, manifest_export_to_typescript, manifest_to_json,
+        Manifest, ManifestExportOptions, ManifestOutput,
+    };
 
     #[test]
     fn manifest_json_round_trips_and_ignores_totals() {
@@ -139,6 +351,7 @@ mod tests {
                 source_bytes: 123,
                 output_path: "public/images/card.webp".to_string(),
                 preset: "project-card".to_string(),
+                fit: "cover".to_string(),
                 width: 640,
                 height: 360,
                 format: "webp".to_string(),
@@ -154,7 +367,122 @@ mod tests {
 
         assert_eq!(parsed.config_path, "dev\"img.toml");
         assert_eq!(parsed.outputs[0].source_path, "assets/images/card.png");
+        assert_eq!(parsed.outputs[0].fit, "cover");
         assert_eq!(parsed.source_bytes_total(), 123);
         assert_eq!(parsed.output_bytes_total(), 45);
+    }
+
+    #[test]
+    fn older_manifest_outputs_without_fit_still_parse() {
+        let raw = r#"{
+  "version": 1,
+  "generated_at": "unix:1",
+  "config_path": "devimg.toml",
+  "config_hash": "blake3:config",
+  "outputs": [
+    {
+      "source_path": "assets/images/card.png",
+      "source_hash": "blake3:source",
+      "source_width": 800,
+      "source_height": 450,
+      "source_bytes": 123,
+      "output_path": "public/images/card.webp",
+      "preset": "project-card",
+      "width": 640,
+      "height": 360,
+      "format": "webp",
+      "bytes": 45,
+      "hash": "blake3:output",
+      "operation_hash": "blake3:operation"
+    }
+  ]
+}"#;
+
+        let parsed: Manifest = serde_json::from_str(raw).expect("old manifest parses");
+
+        assert_eq!(parsed.outputs[0].fit, "unknown");
+    }
+
+    #[test]
+    fn manifest_export_groups_sources_and_derives_urls() {
+        let manifest = sample_manifest();
+        let options = ManifestExportOptions {
+            strip_prefix: Some("public".to_string()),
+            url_prefix: "/".to_string(),
+        };
+
+        let exported = export_manifest(&manifest, &options);
+
+        assert_eq!(exported.sources.len(), 1);
+        assert_eq!(exported.sources[0].source_path, "assets/images/card.png");
+        assert_eq!(exported.sources[0].variants.len(), 2);
+        assert_eq!(exported.sources[0].variants[0].preset, "project-card");
+        assert_eq!(exported.sources[0].variants[0].fit, "cover");
+        assert_eq!(
+            exported.sources[0].variants[0].src,
+            "/images/generated/card.project-card.640.webp"
+        );
+    }
+
+    #[test]
+    fn manifest_export_renderers_are_app_consumable() {
+        let manifest = sample_manifest();
+        let options = ManifestExportOptions {
+            strip_prefix: Some("public".to_string()),
+            url_prefix: "/assets".to_string(),
+        };
+
+        let json = manifest_export_to_json(&manifest, &options);
+        let typescript = manifest_export_to_typescript(&manifest, &options);
+
+        assert!(json.contains("\"sources\""));
+        assert!(json.contains("\"src\": \"/assets/images/generated/card.project-card.640.webp\""));
+        assert!(typescript.starts_with("// Generated by devimg."));
+        assert!(typescript.contains("export const DEVIMG_MANIFEST = {"));
+        assert!(typescript.contains("src: \"/assets/images/generated/card.project-card.640.webp\""));
+        assert!(typescript.ends_with(" as const\n"));
+    }
+
+    fn sample_manifest() -> Manifest {
+        Manifest {
+            version: 1,
+            generated_at: "unix:1".to_string(),
+            config_path: "devimg.toml".to_string(),
+            config_hash: "blake3:config".to_string(),
+            outputs: vec![
+                ManifestOutput {
+                    source_path: "assets/images/card.png".to_string(),
+                    source_hash: "blake3:source".to_string(),
+                    source_width: 800,
+                    source_height: 450,
+                    source_bytes: 123,
+                    output_path: "public/images/generated/card.project-card.640.webp".to_string(),
+                    preset: "project-card".to_string(),
+                    fit: "cover".to_string(),
+                    width: 640,
+                    height: 360,
+                    format: "webp".to_string(),
+                    bytes: 45,
+                    hash: "blake3:output-webp".to_string(),
+                    operation_hash: "blake3:operation-webp".to_string(),
+                },
+                ManifestOutput {
+                    source_path: "assets/images/card.png".to_string(),
+                    source_hash: "blake3:source".to_string(),
+                    source_width: 800,
+                    source_height: 450,
+                    source_bytes: 123,
+                    output_path: "public/images/generated/card.project-card.640.jpeg".to_string(),
+                    preset: "project-card".to_string(),
+                    fit: "cover".to_string(),
+                    width: 640,
+                    height: 360,
+                    format: "jpeg".to_string(),
+                    bytes: 67,
+                    hash: "blake3:output-jpeg".to_string(),
+                    operation_hash: "blake3:operation-jpeg".to_string(),
+                },
+            ],
+        }
     }
 }

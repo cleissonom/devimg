@@ -117,6 +117,7 @@ pub fn check(config: &Config) -> Result<CheckResult> {
             source_bytes: operation.source.bytes,
             output_path: actual_project_path,
             preset: operation.preset.clone(),
+            fit: operation.fit.label().to_string(),
             width: operation.width,
             height: operation.height,
             format: operation.format.label().to_string(),

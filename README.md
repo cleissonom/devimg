@@ -17,6 +17,7 @@ Useful commands:
 ```bash
 cargo run -p devimg-cli -- optimize --config examples/portfolio/devimg.toml --dry-run
 cargo run -p devimg-cli -- report --manifest examples/portfolio/public/images/devimg-manifest.json
+cargo run -p devimg-cli -- manifest export --manifest examples/portfolio/public/images/devimg-manifest.json
 cargo run -p devimg-cli -- inspect fixtures/images/sample.png
 ```
 
@@ -69,6 +70,21 @@ Set `[project].content_hash_filenames = true` to include a generated-byte hash i
 
 Use hashed filenames before applying broad immutable CDN cache headers to generated assets.
 
+## Manifest Consumption
+
+Use `manifest export` to turn the generated manifest into an app-friendly source-to-variant mapping. This is useful when generated filenames include content hashes and the consuming app should not hand-edit those paths.
+
+```bash
+devimg manifest export \
+  --manifest public/images/devimg-manifest.json \
+  --strip-prefix public \
+  --url-prefix / \
+  --format typescript \
+  --output lib/devimg.generated.ts
+```
+
+The exported variants include `src`, `output_path`, `preset`, `fit`, `width`, `height`, `format`, `bytes`, and `hash`. `--strip-prefix public --url-prefix /` converts an output path such as `public/images/generated/card.project-card.640.jpeg` into `/images/generated/card.project-card.640.jpeg`.
+
 For `fit = "cover"`, `crop` controls which part of the resized image is preserved when the aspect ratio requires cropping. It defaults to `center`. Use anchors such as `top`, `bottom`, `left`, `right`, `top-left`, or a normalized focal point:
 
 ```toml
@@ -109,7 +125,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.4
+      - uses: cleissonom/devimg/action@v0.1.5
         with:
           config: devimg.toml
           mode: check
@@ -130,8 +146,8 @@ cargo test --all
 Create a version tag that matches the workspace version and push it:
 
 ```bash
-git tag v0.1.4
-git push origin v0.1.4
+git tag v0.1.5
+git push origin v0.1.5
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

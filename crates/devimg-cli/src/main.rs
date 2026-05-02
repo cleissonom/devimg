@@ -1,10 +1,11 @@
 use std::fs;
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use devimg_core::{
-    check, inspect_image, load_config, optimize, read_manifest, render_manifest_report,
-    render_run_report, DevimgError, OptimizeOptions,
+    check, inspect_image, load_config, manifest_export_to_json, manifest_export_to_typescript,
+    optimize, read_manifest, render_manifest_report, render_run_report, DevimgError,
+    ManifestExportOptions, OptimizeOptions,
 };
 
 fn main() {
@@ -51,6 +52,7 @@ where
         Command::Check(args) => command_check(args),
         Command::Report(args) => command_report(args),
         Command::Inspect(args) => command_inspect(args),
+        Command::Manifest(args) => command_manifest(args),
     }
 }
 
@@ -75,6 +77,7 @@ enum Command {
     Check(CheckArgs),
     Report(ReportArgs),
     Inspect(InspectArgs),
+    Manifest(ManifestArgs),
 }
 
 #[derive(Debug, Args)]
@@ -115,6 +118,37 @@ struct ReportArgs {
 struct InspectArgs {
     #[arg(required = true, allow_hyphen_values = true)]
     files: Vec<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct ManifestArgs {
+    #[command(subcommand)]
+    command: ManifestCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum ManifestCommand {
+    Export(ManifestExportArgs),
+}
+
+#[derive(Debug, Args)]
+struct ManifestExportArgs {
+    #[arg(long)]
+    manifest: PathBuf,
+    #[arg(long, value_enum, default_value = "json")]
+    format: ManifestExportFormat,
+    #[arg(long)]
+    output: Option<PathBuf>,
+    #[arg(long)]
+    strip_prefix: Option<String>,
+    #[arg(long, default_value = "")]
+    url_prefix: String,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ManifestExportFormat {
+    Json,
+    Typescript,
 }
 
 fn command_init(args: InitArgs) -> Result<(), CliError> {
@@ -181,6 +215,37 @@ fn command_inspect(args: InspectArgs) -> Result<(), CliError> {
         println!("  bytes: {}", info.bytes);
         println!("  hash: {}", info.hash);
     }
+    Ok(())
+}
+
+fn command_manifest(args: ManifestArgs) -> Result<(), CliError> {
+    match args.command {
+        ManifestCommand::Export(args) => command_manifest_export(args),
+    }
+}
+
+fn command_manifest_export(args: ManifestExportArgs) -> Result<(), CliError> {
+    let manifest = read_manifest(&args.manifest)?;
+    let options = ManifestExportOptions {
+        strip_prefix: args.strip_prefix,
+        url_prefix: args.url_prefix,
+    };
+    let rendered = match args.format {
+        ManifestExportFormat::Json => manifest_export_to_json(&manifest, &options),
+        ManifestExportFormat::Typescript => manifest_export_to_typescript(&manifest, &options),
+    };
+
+    if let Some(output) = args.output {
+        if let Some(parent) = output.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent).map_err(|source| DevimgError::io(parent, source))?;
+            }
+        }
+        fs::write(&output, rendered).map_err(|source| DevimgError::io(&output, source))?;
+    } else {
+        print!("{rendered}");
+    }
+
     Ok(())
 }
 

@@ -14,7 +14,11 @@ pub use config::{
     PresetConfig, PresetOverrideConfig, ProjectConfig, SourceConfig,
 };
 pub use hash::{hash_bytes, hash_file};
-pub use manifest::{read_manifest, write_manifest, Manifest, ManifestOutput};
+pub use manifest::{
+    export_manifest, manifest_export_to_json, manifest_export_to_typescript, read_manifest,
+    write_manifest, Manifest, ManifestExport, ManifestExportOptions, ManifestExportSource,
+    ManifestExportVariant, ManifestOutput,
+};
 pub use pipeline::{
     build_plan, check, inspect_image, optimize, scan_sources, CheckIssue, CheckResult,
     ImageInspection, Operation, OptimizeOptions, OptimizeResult, Plan, SourceImage,
