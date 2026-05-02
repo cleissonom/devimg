@@ -136,7 +136,7 @@ fn collect_files(dir: &Path) -> Result<Vec<PathBuf>> {
             let message = source.to_string();
             let io_error = source
                 .into_io_error()
-                .unwrap_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, message));
+                .unwrap_or_else(|| std::io::Error::other(message));
             DevimgError::io(path, io_error)
         })?;
         if entry.file_type().is_file() {
