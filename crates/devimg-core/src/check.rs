@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 
 use crate::budget::{budget_issues, budget_status};
-use crate::config::{project_relative, resolve_project_path, Config};
+use crate::config::{project_relative, resolve_project_path_checked, Config};
 use crate::hash::hash_file;
 use crate::manifest::{Manifest, ManifestOutput};
 use crate::pipeline::{
@@ -13,7 +13,8 @@ use crate::{build_plan, scan_sources, DevimgError, Result};
 pub fn check(config: &Config) -> Result<CheckResult> {
     let sources = scan_sources(config)?;
     let plan = build_plan(config, &sources)?;
-    let manifest_path = resolve_project_path(config, &config.project.manifest);
+    let manifest_path =
+        resolve_project_path_checked(config, &config.project.manifest, "manifest path")?;
     let mut issues = Vec::new();
     let manifest = match crate::manifest::read_manifest(&manifest_path) {
         Ok(manifest) => manifest,

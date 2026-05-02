@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::budget::evaluate_budgets;
 pub use crate::check::check;
-use crate::config::{resolve_project_path, Config, FitMode, FormatKind};
+use crate::config::{resolve_project_path_checked, Config, FitMode, FormatKind};
 use crate::manifest::{write_manifest, Manifest};
 pub use crate::plan::build_plan;
 use crate::report::render_run_report;
@@ -119,6 +119,10 @@ pub fn optimize(config: &Config, options: OptimizeOptions) -> Result<OptimizeRes
         return Ok(result);
     }
 
+    let manifest_path =
+        resolve_project_path_checked(config, &config.project.manifest, "manifest path")?;
+    let _report_path = resolve_project_path_checked(config, &config.project.report, "report path")?;
+
     let mut outputs = Vec::new();
     let mut warnings = plan.warnings;
     for operation in &plan.operations {
@@ -154,14 +158,13 @@ pub fn optimize(config: &Config, options: OptimizeOptions) -> Result<OptimizeRes
         manifest,
     };
 
-    let manifest_path = resolve_project_path(config, &config.project.manifest);
     write_manifest(&manifest_path, &result.manifest)?;
     write_report(config, &result)?;
     Ok(result)
 }
 
 pub(crate) fn write_report(config: &Config, result: &OptimizeResult) -> Result<()> {
-    let report_path = resolve_project_path(config, &config.project.report);
+    let report_path = resolve_project_path_checked(config, &config.project.report, "report path")?;
     if let Some(parent) = report_path.parent() {
         fs::create_dir_all(parent).map_err(|source| DevimgError::io(parent, source))?;
     }
@@ -409,6 +412,50 @@ mod tests {
     }
 
     #[test]
+    fn optimize_rejects_manifest_path_outside_project_root() {
+        let project = temp_project("manifest_escape");
+        write_image(&project.join("assets/images/card.png"), 800, 450);
+        write_config_with_paths(
+            &project,
+            "../outside-devimg-manifest.json",
+            "devimg-report.md",
+            640,
+            r#"max_total_bytes = "5mb""#,
+        );
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        let error =
+            optimize(&config, OptimizeOptions::default()).expect_err("manifest path is rejected");
+
+        assert!(matches!(error, DevimgError::Config { .. }));
+        assert!(!project.join("../outside-devimg-manifest.json").exists());
+        cleanup(&project);
+    }
+
+    #[test]
+    fn check_rejects_report_path_outside_project_root() {
+        let project = temp_project("report_escape");
+        write_image(&project.join("assets/images/card.png"), 800, 450);
+        write_config(&project, r#"max_total_bytes = "5mb""#);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        optimize(&config, OptimizeOptions::default()).expect("optimize succeeds");
+        write_config_with_paths(
+            &project,
+            "public/images/devimg-manifest.json",
+            "../outside-devimg-report.md",
+            640,
+            r#"max_total_bytes = "5mb""#,
+        );
+        let changed_config = load_config(project.join("devimg.toml")).expect("config reloads");
+        let error = check(&changed_config).expect_err("report path is rejected");
+
+        assert!(matches!(error, DevimgError::Config { .. }));
+        assert!(!project.join("../outside-devimg-report.md").exists());
+        cleanup(&project);
+    }
+
+    #[test]
     fn plan_preserves_relative_paths_for_same_basename_sources() {
         let project = temp_project("same_basename");
         write_image(&project.join("assets/images/a/card.png"), 800, 450);
@@ -435,13 +482,29 @@ mod tests {
     }
 
     fn write_config_with_width(project: &Path, width: u32, budget_line: &str) {
+        write_config_with_paths(
+            project,
+            "public/images/devimg-manifest.json",
+            "devimg-report.md",
+            width,
+            budget_line,
+        );
+    }
+
+    fn write_config_with_paths(
+        project: &Path,
+        manifest: &str,
+        report: &str,
+        width: u32,
+        budget_line: &str,
+    ) {
         fs::write(
             project.join("devimg.toml"),
             format!(
                 r#"[project]
 root = "."
-manifest = "public/images/devimg-manifest.json"
-report = "devimg-report.md"
+manifest = "{manifest}"
+report = "{report}"
 
 [[sources]]
 name = "portfolio"

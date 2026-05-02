@@ -215,6 +215,22 @@ pub(crate) fn resolve_project_path(config: &Config, path: &Path) -> PathBuf {
     }
 }
 
+pub(crate) fn resolve_project_path_checked(
+    config: &Config,
+    path: &Path,
+    label: &str,
+) -> Result<PathBuf> {
+    let resolved = resolve_project_path(config, path);
+    if config.project.root.as_os_str().is_empty() || resolved.starts_with(&config.project.root) {
+        Ok(resolved)
+    } else {
+        Err(DevimgError::config(
+            &config.path,
+            format!("{label} escapes project root: {}", resolved.display()),
+        ))
+    }
+}
+
 pub(crate) fn project_relative(config: &Config, path: &Path) -> PathBuf {
     let normalized = normalize_path(path);
     normalized

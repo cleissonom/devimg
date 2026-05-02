@@ -25,7 +25,7 @@ inputs:
   version:
     description: Release version to download when no binary is available
     required: false
-    default: v0.1.0
+    default: v0.1.1
   report-path:
     description: Markdown report path to append to the job summary
     required: false
@@ -51,10 +51,23 @@ runs:
   steps:
     - id: resolve
       shell: bash
+      env:
+        DEVIMG_BINARY_PATH: ${{ inputs.binary-path }}
+        DEVIMG_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        if [[ -n "${{ inputs.binary-path }}" ]]; then
-          echo "bin=${{ inputs.binary-path }}" >> "$GITHUB_OUTPUT"
+        reject_multiline() {
+          local name="$1"
+          local value="$2"
+          if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+            echo "$name cannot contain newlines" >&2
+            exit 2
+          fi
+        }
+        reject_multiline "binary-path" "$DEVIMG_BINARY_PATH"
+        reject_multiline "version" "$DEVIMG_VERSION"
+        if [[ -n "$DEVIMG_BINARY_PATH" ]]; then
+          echo "bin=$DEVIMG_BINARY_PATH" >> "$GITHUB_OUTPUT"
         elif command -v devimg >/dev/null 2>&1; then
           echo "bin=$(command -v devimg)" >> "$GITHUB_OUTPUT"
         else
@@ -71,7 +84,7 @@ runs:
             arm64|aarch64) arch="aarch64" ;;
             *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
           esac
-          url="https://github.com/cleissonom/devimg/releases/download/${{ inputs.version }}/devimg-${os}-${arch}.tar.gz"
+          url="https://github.com/cleissonom/devimg/releases/download/${DEVIMG_VERSION}/devimg-${os}-${arch}.tar.gz"
           mkdir -p "$RUNNER_TEMP/devimg"
           curl -fsSL "$url" -o "$RUNNER_TEMP/devimg/devimg.tar.gz"
           tar -xzf "$RUNNER_TEMP/devimg/devimg.tar.gz" -C "$RUNNER_TEMP/devimg"
@@ -81,15 +94,35 @@ runs:
     - id: run
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        DEVIMG_BIN: ${{ steps.resolve.outputs.bin }}
+        DEVIMG_MODE: ${{ inputs.mode }}
+        DEVIMG_CONFIG: ${{ inputs.config }}
+        DEVIMG_FAIL_ON_WARNING: ${{ inputs.fail-on-warning }}
+        DEVIMG_REPORT_PATH: ${{ inputs.report-path }}
+        DEVIMG_MANIFEST_PATH: ${{ inputs.manifest-path }}
       run: |
         set +e
-        bin="${{ steps.resolve.outputs.bin }}"
-        mode="${{ inputs.mode }}"
-        config="${{ inputs.config }}"
+        reject_multiline() {
+          local name="$1"
+          local value="$2"
+          if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+            echo "$name cannot contain newlines" >&2
+            exit 2
+          fi
+        }
+        reject_multiline "resolved binary path" "$DEVIMG_BIN"
+        reject_multiline "mode" "$DEVIMG_MODE"
+        reject_multiline "config" "$DEVIMG_CONFIG"
+        reject_multiline "report-path" "$DEVIMG_REPORT_PATH"
+        reject_multiline "manifest-path" "$DEVIMG_MANIFEST_PATH"
+        bin="$DEVIMG_BIN"
+        mode="$DEVIMG_MODE"
+        config="$DEVIMG_CONFIG"
         status="pass"
         if [[ "$mode" == "check" ]]; then
           args=(check --config "$config")
-          if [[ "${{ inputs.fail-on-warning }}" == "true" ]]; then
+          if [[ "$DEVIMG_FAIL_ON_WARNING" == "true" ]]; then
             args+=(--fail-on-warning)
           fi
         elif [[ "$mode" == "optimize" ]]; then
@@ -104,9 +137,9 @@ runs:
           status="fail"
         fi
         echo "status=$status" >> "$GITHUB_OUTPUT"
-        echo "report-path=${{ inputs.report-path }}" >> "$GITHUB_OUTPUT"
-        echo "manifest-path=${{ inputs.manifest-path }}" >> "$GITHUB_OUTPUT"
-        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && -f "${{ inputs.report-path }}" ]]; then
-          cat "${{ inputs.report-path }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "report-path=$DEVIMG_REPORT_PATH" >> "$GITHUB_OUTPUT"
+        echo "manifest-path=$DEVIMG_MANIFEST_PATH" >> "$GITHUB_OUTPUT"
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && -f "$DEVIMG_REPORT_PATH" ]]; then
+          cat "$DEVIMG_REPORT_PATH" >> "$GITHUB_STEP_SUMMARY"
         fi
         exit "$code"

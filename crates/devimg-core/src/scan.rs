@@ -5,7 +5,7 @@ use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use image::ImageFormat;
 use walkdir::WalkDir;
 
-use crate::config::{project_relative, resolve_project_path, Config, FormatKind};
+use crate::config::{project_relative, resolve_project_path_checked, Config, FormatKind};
 use crate::hash::hash_bytes;
 use crate::pipeline::{path_to_string, ImageInspection, SourceImage};
 use crate::{DevimgError, Result};
@@ -13,10 +13,8 @@ use crate::{DevimgError, Result};
 pub fn scan_sources(config: &Config) -> Result<Vec<SourceImage>> {
     let mut images = Vec::new();
     for source in &config.sources {
-        let input_root = resolve_project_path(config, &source.input);
-        let output_root = resolve_project_path(config, &source.output);
-        ensure_under_root(config, &input_root, "source input")?;
-        ensure_under_root(config, &output_root, "source output")?;
+        let input_root = resolve_project_path_checked(config, &source.input, "source input")?;
+        let output_root = resolve_project_path_checked(config, &source.output, "source output")?;
         if !input_root.exists() {
             return Err(DevimgError::config(
                 &config.path,
@@ -160,17 +158,6 @@ fn image_format_label(format: ImageFormat) -> &'static str {
         ImageFormat::Jpeg => "jpeg",
         ImageFormat::WebP => "webp",
         _ => "unsupported",
-    }
-}
-
-fn ensure_under_root(config: &Config, path: &Path, label: &str) -> Result<()> {
-    if config.project.root.as_os_str().is_empty() || path.starts_with(&config.project.root) {
-        Ok(())
-    } else {
-        Err(DevimgError::config(
-            &config.path,
-            format!("{label} escapes project root: {}", path.display()),
-        ))
     }
 }
 
