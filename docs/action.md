@@ -24,7 +24,7 @@ jobs:
           mode: check
 ```
 
-Use `binary-path` when testing the Action from a local checkout after building `target/debug/devimg`.
+Use `uses: ./action` plus `binary-path: target/debug/devimg` when testing the Action from this repository's local checkout after building the CLI. Consumer workflows should use the published Action path shown above.
 
 `report-path` and `manifest-path` describe files for summary/output metadata. Configure the actual report and manifest paths in `devimg.toml`.
 

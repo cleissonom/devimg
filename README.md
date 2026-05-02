@@ -90,7 +90,7 @@ jobs:
           mode: check
 ```
 
-For local monorepo smoke tests, build the CLI first and pass `binary-path: target/debug/devimg`.
+This repository's CI smoke test builds the CLI, runs the local composite Action with `uses: ./action`, and passes `binary-path: target/debug/devimg`. Consumer workflows should use the published Action path shown above.
 
 ## Development
 
