@@ -25,12 +25,12 @@ Core modules:
 
 When `[project].content_hash_filenames = true`, `plan` keeps a canonical non-hash output path for operation identity, `transform` inserts the encoded output hash into the actual filename, and `check` matches manifest outputs by operation hash before validating the hashed file path.
 
-`devimg manifest export` reads the generated manifest and groups variants by source path. The export layer can strip a project path prefix and add a URL prefix so web apps can consume content-hashed generated filenames without hard-coded lookup tables.
+`devimg manifest export` reads the generated manifest and groups variants by source path. The export layer can strip a project path prefix and add a URL prefix so web apps can consume content-hashed generated filenames without hard-coded lookup tables. `devimg manifest export --check --output <file>` compares a checked-in export with the current rendered output and fails without rewriting when it is missing or stale.
 
 Exit codes:
 
 - `0`: success or help output.
 - `1`: runtime error outside config validation.
 - `2`: usage or config error.
-- `3`: `devimg check` failed.
+- `3`: `devimg check` failed, or `devimg manifest export --check` found a missing or stale export.
 - `4`: unsafe overwrite refused.

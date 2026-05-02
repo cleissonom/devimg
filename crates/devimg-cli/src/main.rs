@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::ErrorKind;
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -143,6 +144,8 @@ struct ManifestExportArgs {
     strip_prefix: Option<String>,
     #[arg(long, default_value = "")]
     url_prefix: String,
+    #[arg(long)]
+    check: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -234,6 +237,33 @@ fn command_manifest_export(args: ManifestExportArgs) -> Result<(), CliError> {
         ManifestExportFormat::Json => manifest_export_to_json(&manifest, &options),
         ManifestExportFormat::Typescript => manifest_export_to_typescript(&manifest, &options),
     };
+
+    if args.check {
+        let output = args.output.ok_or_else(|| {
+            CliError::Core(DevimgError::config(
+                &args.manifest,
+                "--check requires --output",
+            ))
+        })?;
+        let current = match fs::read(&output) {
+            Ok(current) => current,
+            Err(source) if source.kind() == ErrorKind::NotFound => {
+                return Err(CliError::CheckFailed(format!(
+                    "Manifest export is missing: {}",
+                    output.display()
+                )));
+            }
+            Err(source) => return Err(CliError::Core(DevimgError::io(&output, source))),
+        };
+        if current == rendered.as_bytes() {
+            println!("Manifest export is up to date: {}", output.display());
+            return Ok(());
+        }
+        return Err(CliError::CheckFailed(format!(
+            "Manifest export is stale: {}",
+            output.display()
+        )));
+    }
 
     if let Some(output) = args.output {
         if let Some(parent) = output.parent() {

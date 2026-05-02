@@ -83,6 +83,18 @@ devimg manifest export \
   --output lib/devimg.generated.ts
 ```
 
+Use `--check` in CI to fail when a checked-in export is missing or stale without rewriting it:
+
+```bash
+devimg manifest export \
+  --manifest public/images/devimg-manifest.json \
+  --strip-prefix public \
+  --url-prefix / \
+  --format typescript \
+  --output lib/devimg.generated.ts \
+  --check
+```
+
 The exported variants include `src`, `output_path`, `preset`, `fit`, `width`, `height`, `format`, `bytes`, and `hash`. `--strip-prefix public --url-prefix /` converts an output path such as `public/images/generated/card.project-card.640.jpeg` into `/images/generated/card.project-card.640.jpeg`.
 
 For `fit = "cover"`, `crop` controls which part of the resized image is preserved when the aspect ratio requires cropping. It defaults to `center`. Use anchors such as `top`, `bottom`, `left`, `right`, `top-left`, or a normalized focal point:
@@ -125,7 +137,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.5
+      - uses: cleissonom/devimg/action@v0.1.6
         with:
           config: devimg.toml
           mode: check
@@ -146,8 +158,8 @@ cargo test --all
 Create a version tag that matches the workspace version and push it:
 
 ```bash
-git tag v0.1.5
-git push origin v0.1.5
+git tag v0.1.6
+git push origin v0.1.6
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

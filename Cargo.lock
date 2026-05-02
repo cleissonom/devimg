@@ -213,7 +213,7 @@ dependencies = [
 
 [[package]]
 name = "devimg-cli"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "clap",
  "devimg-core",
@@ -221,7 +221,7 @@ dependencies = [
 
 [[package]]
 name = "devimg-core"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "blake3",
  "globset",

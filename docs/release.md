@@ -4,11 +4,11 @@
 
 ## Publish
 
-For version `0.1.5`:
+For version `0.1.6`:
 
 ```bash
-git tag v0.1.5
-git push origin v0.1.5
+git tag v0.1.6
+git push origin v0.1.6
 ```
 
 The `Release` workflow builds and publishes:
@@ -29,8 +29,8 @@ Download the matching archive from the release page, verify its checksum, extrac
 Example for Linux x86_64:
 
 ```bash
-curl -fsSLO https://github.com/cleissonom/devimg/releases/download/v0.1.5/devimg-linux-x86_64.tar.gz
-curl -fsSLO https://github.com/cleissonom/devimg/releases/download/v0.1.5/devimg-linux-x86_64.tar.gz.sha256
+curl -fsSLO https://github.com/cleissonom/devimg/releases/download/v0.1.6/devimg-linux-x86_64.tar.gz
+curl -fsSLO https://github.com/cleissonom/devimg/releases/download/v0.1.6/devimg-linux-x86_64.tar.gz.sha256
 sha256sum -c devimg-linux-x86_64.tar.gz.sha256
 tar -xzf devimg-linux-x86_64.tar.gz
 ./devimg --help
@@ -41,7 +41,7 @@ tar -xzf devimg-linux-x86_64.tar.gz
 Install directly from the Git tag:
 
 ```bash
-cargo install --git https://github.com/cleissonom/devimg --tag v0.1.5 devimg-cli
+cargo install --git https://github.com/cleissonom/devimg --tag v0.1.6 devimg-cli
 ```
 
 For local development:
@@ -55,7 +55,7 @@ cargo install --path crates/devimg-cli
 Consumer workflows should pin the Action to the release tag:
 
 ```yaml
-- uses: cleissonom/devimg/action@v0.1.5
+- uses: cleissonom/devimg/action@v0.1.6
   with:
     config: devimg.toml
     mode: check
