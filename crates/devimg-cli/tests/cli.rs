@@ -51,6 +51,34 @@ fn optimize_and_check_success() {
 }
 
 #[test]
+fn content_hash_filename_mode_is_checkable() {
+    let project = fixture_project_with_project_settings(
+        "content_hash_filenames",
+        "sample.png",
+        "content_hash_filenames = true",
+        r#"max_total_bytes = "5mb""#,
+    );
+    let config = path_arg(project.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    let output_path = single_generated_webp(&project);
+    let output_name = output_path
+        .file_name()
+        .expect("output filename")
+        .to_string_lossy();
+    assert!(output_name.starts_with("sample.project-card.64."));
+    assert_ne!(output_name.as_ref(), "sample.project-card.64.webp");
+    let manifest = fs::read_to_string(project.join("public/images/devimg-manifest.json"))
+        .expect("manifest reads");
+    assert!(manifest.contains(output_name.as_ref()));
+
+    assert_code(run(["check", "--config", config.as_str()]), 0);
+    fs::remove_file(&output_path).expect("remove hashed output");
+    assert_code(run(["check", "--config", config.as_str()]), 3);
+    cleanup(&project);
+}
+
+#[test]
 fn check_fails_with_exit_3_when_output_is_deleted() {
     let project = fixture_project("deleted_output", "sample.png");
     let config = path_arg(project.join("devimg.toml"));
@@ -266,6 +294,15 @@ fn write_project_config(project: &Path, width: u32, project_settings: &str, budg
 
 fn fixture_image() -> PathBuf {
     repo_root().join("fixtures/images/sample.png")
+}
+
+fn single_generated_webp(project: &Path) -> PathBuf {
+    let generated = project.join("public/images/generated");
+    fs::read_dir(generated)
+        .expect("generated dir exists")
+        .map(|entry| entry.expect("generated entry").path())
+        .find(|path| path.extension() == Some(OsStr::new("webp")))
+        .expect("generated webp exists")
 }
 
 fn repo_root() -> PathBuf {

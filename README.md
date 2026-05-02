@@ -31,6 +31,7 @@ manifest = "public/images/devimg-manifest.json"
 report = "devimg-report.md"
 overwrite = false
 strip_metadata = true
+content_hash_filenames = false
 
 [[sources]]
 name = "portfolio"
@@ -59,6 +60,14 @@ Outputs are named as:
 {relative-source-dir}/{stem}.{preset}.{width}.{format}
 ```
 
+Set `[project].content_hash_filenames = true` to include a generated-byte hash in output names:
+
+```text
+{relative-source-dir}/{stem}.{preset}.{width}.{hash}.{format}
+```
+
+Use hashed filenames before applying broad immutable CDN cache headers to generated assets.
+
 ## Safety
 
 - `optimize --dry-run` plans work without writing files.
@@ -84,7 +93,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.1
+      - uses: cleissonom/devimg/action@v0.1.2
         with:
           config: devimg.toml
           mode: check
@@ -105,8 +114,8 @@ cargo test --all
 Create a version tag that matches the workspace version and push it:
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.
@@ -114,5 +123,5 @@ The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256
 ## MVP Limits
 
 - Stable format scope is PNG, JPEG, and WebP.
-- WebP encoding uses the Rust `image` crate's MVP support; lossy WebP quality control can be improved later with a dedicated encoder.
+- `quality` controls lossy JPEG and WebP output. PNG remains lossless.
 - The Action does not commit generated files or post PR comments.

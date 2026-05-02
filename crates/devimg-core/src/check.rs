@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::path::PathBuf;
 
 use crate::budget::{budget_issues, budget_status};
 use crate::config::{project_relative, resolve_project_path_checked, Config};
@@ -8,6 +9,7 @@ use crate::manifest::{Manifest, ManifestOutput};
 use crate::pipeline::{
     path_to_string, unique_source_bytes, write_report, CheckIssue, CheckResult, OptimizeResult,
 };
+use crate::transform::final_output_project_path;
 use crate::{build_plan, scan_sources, DevimgError, Result};
 
 pub fn check(config: &Config) -> Result<CheckResult> {
@@ -41,52 +43,61 @@ pub fn check(config: &Config) -> Result<CheckResult> {
         .iter()
         .map(|output| (output.output_path.as_str(), output))
         .collect();
+    let mut by_operation_hash = HashMap::<&str, Vec<&ManifestOutput>>::new();
+    for output in &manifest.outputs {
+        by_operation_hash
+            .entry(output.operation_hash.as_str())
+            .or_default()
+            .push(output);
+    }
 
     let mut actual_outputs = Vec::new();
     for operation in &plan.operations {
-        match by_output.get(operation.output_project_path.as_str()) {
-            Some(manifest_output) => {
-                if manifest_output.operation_hash != operation.operation_hash {
-                    issues.push(CheckIssue {
-                        kind: "stale".to_string(),
-                        path: operation.output_project_path.clone(),
-                        message: "planned operation no longer matches manifest".to_string(),
-                    });
-                }
-            }
-            None => issues.push(CheckIssue {
-                kind: "stale".to_string(),
-                path: operation.output_project_path.clone(),
-                message: "planned output is missing from manifest".to_string(),
-            }),
-        }
+        let manifest_output = if operation.content_hash_filenames {
+            hashed_manifest_output(operation, &by_operation_hash, &mut issues)?
+        } else {
+            stable_manifest_output(operation, &by_output, &mut issues)
+        };
 
-        if !operation.output_path.exists() {
+        let actual_project_path = manifest_output
+            .map(|output| output.output_path.clone())
+            .unwrap_or_else(|| operation.output_project_path.clone());
+        let actual_path = if let Some(output) = manifest_output {
+            resolve_project_path_checked(
+                config,
+                &PathBuf::from(&output.output_path),
+                "manifest output path",
+            )?
+        } else {
+            operation.output_path.clone()
+        };
+
+        if !actual_path.exists() {
             issues.push(CheckIssue {
                 kind: "missing".to_string(),
-                path: operation.output_project_path.clone(),
+                path: actual_project_path,
                 message: "output file does not exist".to_string(),
             });
             continue;
         }
 
-        let actual_hash = hash_file(&operation.output_path)?;
-        if let Some(manifest_output) = by_output.get(operation.output_project_path.as_str()) {
+        let actual_hash = hash_file(&actual_path)?;
+        if let Some(manifest_output) = manifest_output {
             if manifest_output.hash != actual_hash {
                 issues.push(CheckIssue {
                     kind: "modified".to_string(),
-                    path: operation.output_project_path.clone(),
+                    path: actual_project_path.clone(),
                     message: "output content hash differs from manifest".to_string(),
                 });
             }
         }
-        let metadata = fs::metadata(&operation.output_path)
-            .map_err(|source| DevimgError::io(&operation.output_path, source))?;
-        match image::image_dimensions(&operation.output_path) {
+        let metadata =
+            fs::metadata(&actual_path).map_err(|source| DevimgError::io(&actual_path, source))?;
+        match image::image_dimensions(&actual_path) {
             Ok((width, height)) if width == operation.width && height == operation.height => {}
             Ok((width, height)) => issues.push(CheckIssue {
                 kind: "stale".to_string(),
-                path: operation.output_project_path.clone(),
+                path: actual_project_path.clone(),
                 message: format!(
                     "output dimensions are {}x{}, expected {}x{}",
                     width, height, operation.width, operation.height
@@ -94,7 +105,7 @@ pub fn check(config: &Config) -> Result<CheckResult> {
             }),
             Err(source) => issues.push(CheckIssue {
                 kind: "invalid_output".to_string(),
-                path: operation.output_project_path.clone(),
+                path: actual_project_path.clone(),
                 message: source.to_string(),
             }),
         }
@@ -104,7 +115,7 @@ pub fn check(config: &Config) -> Result<CheckResult> {
             source_width: operation.source.width,
             source_height: operation.source.height,
             source_bytes: operation.source.bytes,
-            output_path: operation.output_project_path.clone(),
+            output_path: actual_project_path,
             preset: operation.preset.clone(),
             width: operation.width,
             height: operation.height,
@@ -142,4 +153,67 @@ pub fn check(config: &Config) -> Result<CheckResult> {
         passed: result.issues.is_empty(),
         result,
     })
+}
+
+fn stable_manifest_output<'a>(
+    operation: &crate::pipeline::Operation,
+    by_output: &'a HashMap<&str, &'a ManifestOutput>,
+    issues: &mut Vec<CheckIssue>,
+) -> Option<&'a ManifestOutput> {
+    match by_output.get(operation.output_project_path.as_str()) {
+        Some(manifest_output) => {
+            if manifest_output.operation_hash != operation.operation_hash {
+                issues.push(CheckIssue {
+                    kind: "stale".to_string(),
+                    path: operation.output_project_path.clone(),
+                    message: "planned operation no longer matches manifest".to_string(),
+                });
+            }
+            Some(*manifest_output)
+        }
+        None => {
+            issues.push(CheckIssue {
+                kind: "stale".to_string(),
+                path: operation.output_project_path.clone(),
+                message: "planned output is missing from manifest".to_string(),
+            });
+            None
+        }
+    }
+}
+
+fn hashed_manifest_output<'a>(
+    operation: &crate::pipeline::Operation,
+    by_operation_hash: &'a HashMap<&str, Vec<&'a ManifestOutput>>,
+    issues: &mut Vec<CheckIssue>,
+) -> Result<Option<&'a ManifestOutput>> {
+    let Some(outputs) = by_operation_hash.get(operation.operation_hash.as_str()) else {
+        issues.push(CheckIssue {
+            kind: "stale".to_string(),
+            path: operation.output_project_path.clone(),
+            message: "planned hashed output is missing from manifest".to_string(),
+        });
+        return Ok(None);
+    };
+
+    if outputs.len() > 1 {
+        issues.push(CheckIssue {
+            kind: "stale".to_string(),
+            path: operation.output_project_path.clone(),
+            message: "manifest contains duplicate outputs for one planned operation".to_string(),
+        });
+    }
+
+    let output = outputs[0];
+    let expected_path =
+        final_output_project_path(&operation.output_project_path, &output.hash, operation)?;
+    if output.output_path != expected_path {
+        issues.push(CheckIssue {
+            kind: "stale".to_string(),
+            path: output.output_path.clone(),
+            message: "manifest output path does not match its content hash".to_string(),
+        });
+    }
+
+    Ok(Some(output))
 }

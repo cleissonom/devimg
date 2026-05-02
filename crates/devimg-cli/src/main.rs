@@ -191,6 +191,7 @@ manifest = "public/images/devimg-manifest.json"
 report = "devimg-report.md"
 overwrite = false
 strip_metadata = true
+content_hash_filenames = false
 
 [[sources]]
 name = "portfolio"

@@ -24,6 +24,7 @@ pub struct ProjectConfig {
     pub report: PathBuf,
     pub overwrite: bool,
     pub strip_metadata: bool,
+    pub content_hash_filenames: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -338,6 +339,7 @@ impl RawConfig {
                 report,
                 overwrite: self.project.overwrite.unwrap_or(false),
                 strip_metadata: self.project.strip_metadata.unwrap_or(true),
+                content_hash_filenames: self.project.content_hash_filenames.unwrap_or(false),
             },
             sources,
             presets,
@@ -359,6 +361,8 @@ struct RawProjectConfig {
     #[serde(alias = "allow_overwrite")]
     overwrite: Option<bool>,
     strip_metadata: Option<bool>,
+    #[serde(alias = "hash_filenames", alias = "hashed_filenames")]
+    content_hash_filenames: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -531,9 +535,32 @@ upscale = true
 "#;
         let config = parse_config(Path::new("devimg.toml"), raw).expect("config parses");
         assert!(config.project.overwrite);
+        assert!(!config.project.content_hash_filenames);
         assert!(config.presets[0].allow_upscale);
         assert_eq!(config.presets[0].quality, 82);
         assert_eq!(config.presets[0].formats, vec![FormatKind::Jpeg]);
+    }
+
+    #[test]
+    fn parses_content_hash_filename_alias() {
+        let raw = r#"
+[project]
+manifest = "public/images/devimg-manifest.json"
+hash_filenames = true
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+
+[[preset]]
+name = "project-card"
+widths = [640]
+formats = ["webp"]
+"#;
+        let config = parse_config(Path::new("devimg.toml"), raw).expect("config parses");
+
+        assert!(config.project.content_hash_filenames);
     }
 
     #[test]

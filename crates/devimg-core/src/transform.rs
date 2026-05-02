@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::Cursor;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use image::{imageops::FilterType, DynamicImage};
 
@@ -29,37 +29,49 @@ pub(crate) fn execute_operation(
     let encoded = encode_image(&processed, operation.format, operation.quality)
         .map_err(|message| DevimgError::image(&operation.output_path, message))?;
     let encoded_hash = hash_bytes(&encoded);
+    let output_path = final_output_path(&operation.output_path, &encoded_hash, operation)?;
+    let output_project_path =
+        final_output_project_path(&operation.output_project_path, &encoded_hash, operation)?;
 
-    if operation.output_path.exists() {
-        let existing_hash = hash_file(&operation.output_path)?;
+    if output_path.exists() {
+        let existing_hash = hash_file(&output_path)?;
         if existing_hash == encoded_hash {
-            let metadata = fs::metadata(&operation.output_path)
-                .map_err(|source| DevimgError::io(&operation.output_path, source))?;
-            return Ok(manifest_output(operation, metadata.len(), encoded_hash));
+            let metadata = fs::metadata(&output_path)
+                .map_err(|source| DevimgError::io(&output_path, source))?;
+            return Ok(manifest_output(
+                operation,
+                output_project_path,
+                metadata.len(),
+                encoded_hash,
+            ));
         }
         if !allow_overwrite {
-            return Err(DevimgError::UnsafeOverwrite {
-                path: operation.output_path.clone(),
-            });
+            return Err(DevimgError::UnsafeOverwrite { path: output_path });
         }
     }
 
-    safe_write(&operation.output_path, &encoded, allow_overwrite)?;
+    safe_write(&output_path, &encoded, allow_overwrite)?;
     Ok(manifest_output(
         operation,
+        output_project_path,
         encoded.len() as u64,
         encoded_hash,
     ))
 }
 
-fn manifest_output(operation: &Operation, bytes: u64, hash: String) -> ManifestOutput {
+fn manifest_output(
+    operation: &Operation,
+    output_project_path: String,
+    bytes: u64,
+    hash: String,
+) -> ManifestOutput {
     ManifestOutput {
         source_path: operation.source.project_path.clone(),
         source_hash: operation.source.hash.clone(),
         source_width: operation.source.width,
         source_height: operation.source.height,
         source_bytes: operation.source.bytes,
-        output_path: operation.output_project_path.clone(),
+        output_path: output_project_path,
         preset: operation.preset.clone(),
         width: operation.width,
         height: operation.height,
@@ -68,6 +80,63 @@ fn manifest_output(operation: &Operation, bytes: u64, hash: String) -> ManifestO
         hash,
         operation_hash: operation.operation_hash.clone(),
     }
+}
+
+pub(crate) fn final_output_project_path(
+    output_project_path: &str,
+    hash: &str,
+    operation: &Operation,
+) -> Result<String> {
+    if operation.content_hash_filenames {
+        add_hash_to_output_project_path(output_project_path, hash)
+    } else {
+        Ok(output_project_path.to_string())
+    }
+}
+
+fn final_output_path(path: &Path, hash: &str, operation: &Operation) -> Result<PathBuf> {
+    if operation.content_hash_filenames {
+        add_hash_to_output_path(path, hash)
+    } else {
+        Ok(path.to_path_buf())
+    }
+}
+
+fn add_hash_to_output_project_path(output_project_path: &str, hash: &str) -> Result<String> {
+    let separator = output_project_path
+        .rfind('/')
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let (parent, file_name) = output_project_path.split_at(separator);
+    let (stem, extension) = file_name.rsplit_once('.').ok_or_else(|| {
+        DevimgError::image(
+            output_project_path,
+            "could not derive extension for hashed output filename",
+        )
+    })?;
+    Ok(format!(
+        "{parent}{stem}.{}.{}",
+        hash_fragment(hash),
+        extension
+    ))
+}
+
+fn add_hash_to_output_path(path: &Path, hash: &str) -> Result<PathBuf> {
+    let stem = path
+        .file_stem()
+        .ok_or_else(|| DevimgError::image(path, "could not derive file stem"))?
+        .to_string_lossy();
+    let extension = path
+        .extension()
+        .ok_or_else(|| DevimgError::image(path, "could not derive file extension"))?
+        .to_string_lossy();
+    let file_name = format!("{stem}.{}.{}", hash_fragment(hash), extension);
+    Ok(path.with_file_name(file_name))
+}
+
+fn hash_fragment(hash: &str) -> &str {
+    let raw = hash.strip_prefix("blake3:").unwrap_or(hash);
+    &raw[..raw.len().min(12)]
 }
 
 fn transform_image(image: DynamicImage, fit: FitMode, width: u32, height: u32) -> DynamicImage {
@@ -95,11 +164,22 @@ fn encode_image(
         FormatKind::Jpeg => DynamicImage::ImageRgb8(image.to_rgb8())
             .write_to(&mut cursor, format.output_format(quality))
             .map_err(|source| source.to_string())?,
-        FormatKind::Png | FormatKind::Webp => image
+        FormatKind::Png => image
             .write_to(&mut cursor, format.output_format(quality))
             .map_err(|source| source.to_string())?,
+        FormatKind::Webp => return encode_webp(image, quality),
     }
     Ok(cursor.into_inner())
+}
+
+fn encode_webp(image: &DynamicImage, quality: u8) -> std::result::Result<Vec<u8>, String> {
+    let rgba = image.to_rgba8();
+    let encoder = webp::Encoder::from_rgba(&rgba, rgba.width(), rgba.height());
+    let encoded = encoder.encode(f32::from(quality));
+    if encoded.is_empty() {
+        return Err("WebP encoder returned empty output".to_string());
+    }
+    Ok(encoded.to_vec())
 }
 
 fn safe_write(path: &Path, bytes: &[u8], allow_replace: bool) -> Result<()> {
@@ -119,4 +199,65 @@ fn safe_write(path: &Path, bytes: &[u8], allow_replace: bool) -> Result<()> {
         fs::remove_file(path).map_err(|source| DevimgError::io(path, source))?;
     }
     fs::rename(&tmp_path, path).map_err(|source| DevimgError::io(path, source))
+}
+
+#[cfg(test)]
+mod tests {
+    use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
+
+    use crate::config::{FitMode, FormatKind};
+
+    use super::{encode_image, transform_image};
+
+    #[test]
+    fn webp_quality_changes_encoded_size() {
+        let image = detailed_image(128, 128);
+
+        let low = encode_image(&image, FormatKind::Webp, 10).expect("low quality webp encodes");
+        let high = encode_image(&image, FormatKind::Webp, 90).expect("high quality webp encodes");
+
+        assert_ne!(low, high);
+        assert!(
+            high.len() > low.len() + (low.len() / 5),
+            "expected high-quality WebP to be materially larger, low={} high={}",
+            low.len(),
+            high.len()
+        );
+
+        let decoded =
+            image::load_from_memory_with_format(&high, ImageFormat::WebP).expect("webp decodes");
+        assert_eq!((decoded.width(), decoded.height()), (128, 128));
+    }
+
+    #[test]
+    fn cover_crop_centers_wide_images() {
+        let mut source = RgbaImage::new(6, 2);
+        for (x, _y, pixel) in source.enumerate_pixels_mut() {
+            *pixel = match x {
+                0 | 1 => Rgba([255, 0, 0, 255]),
+                2 | 3 => Rgba([0, 255, 0, 255]),
+                _ => Rgba([0, 0, 255, 255]),
+            };
+        }
+
+        let cropped = transform_image(DynamicImage::ImageRgba8(source), FitMode::Cover, 2, 2);
+
+        assert_eq!((cropped.width(), cropped.height()), (2, 2));
+        let pixels = cropped.to_rgba8();
+        assert!(pixels.pixels().all(|pixel| pixel.0 == [0, 255, 0, 255]));
+    }
+
+    fn detailed_image(width: u32, height: u32) -> DynamicImage {
+        let mut image = RgbaImage::new(width, height);
+        for (x, y, pixel) in image.enumerate_pixels_mut() {
+            let mixed = x.wrapping_mul(31) ^ y.wrapping_mul(17);
+            *pixel = Rgba([
+                ((x * 3 + y * 5 + mixed) % 256) as u8,
+                ((x * 11 + y * 7) % 256) as u8,
+                ((x * y + mixed * 13) % 256) as u8,
+                255,
+            ]);
+        }
+        DynamicImage::ImageRgba8(image)
+    }
 }

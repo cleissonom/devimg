@@ -36,6 +36,7 @@ pub struct Operation {
     pub format: FormatKind,
     pub width: u32,
     pub height: u32,
+    pub content_hash_filenames: bool,
     pub output_path: PathBuf,
     pub output_project_path: String,
     pub operation_hash: String,
@@ -367,6 +368,81 @@ mod tests {
     }
 
     #[test]
+    fn content_hash_filenames_use_generated_byte_hashes() {
+        let project = temp_project("hash_filenames");
+        write_image(&project.join("assets/images/card.png"), 800, 450);
+        write_hashed_config_with_width(&project, 640, r#"max_total_bytes = "5mb""#);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        let result = optimize(&config, OptimizeOptions::default()).expect("optimize succeeds");
+
+        assert_eq!(result.manifest.outputs.len(), 2);
+        assert!(!project
+            .join("public/images/generated/card.project-card.640.webp")
+            .exists());
+        for output in &result.manifest.outputs {
+            let fragment = output
+                .hash
+                .strip_prefix("blake3:")
+                .expect("content hash uses blake3")
+                .get(..12)
+                .expect("content hash has a fragment");
+            assert!(
+                output.output_path.contains(&format!(".{fragment}.")),
+                "output path should include content hash fragment: {}",
+                output.output_path
+            );
+            assert!(project.join(&output.output_path).exists());
+        }
+
+        let check_result = check(&config).expect("check runs");
+        assert!(check_result.passed);
+        cleanup(&project);
+    }
+
+    #[test]
+    fn content_hash_check_fails_when_output_is_deleted() {
+        let project = temp_project("hash_missing");
+        write_image(&project.join("assets/images/card.png"), 800, 450);
+        write_hashed_config_with_width(&project, 640, r#"max_total_bytes = "5mb""#);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        let result = optimize(&config, OptimizeOptions::default()).expect("optimize succeeds");
+        fs::remove_file(project.join(&result.manifest.outputs[0].output_path))
+            .expect("hashed output removed");
+        let check_result = check(&config).expect("check runs");
+
+        assert!(!check_result.passed);
+        assert!(check_result
+            .result
+            .issues
+            .iter()
+            .any(|issue| issue.kind == "missing"));
+        cleanup(&project);
+    }
+
+    #[test]
+    fn content_hash_check_fails_when_config_changes_without_regeneration() {
+        let project = temp_project("hash_stale");
+        write_image(&project.join("assets/images/card.png"), 800, 450);
+        write_hashed_config_with_width(&project, 640, r#"max_total_bytes = "5mb""#);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        optimize(&config, OptimizeOptions::default()).expect("optimize succeeds");
+        write_hashed_config_with_width(&project, 320, r#"max_total_bytes = "5mb""#);
+        let changed_config = load_config(project.join("devimg.toml")).expect("config reloads");
+        let check_result = check(&changed_config).expect("check runs");
+
+        assert!(!check_result.passed);
+        assert!(check_result
+            .result
+            .issues
+            .iter()
+            .any(|issue| issue.kind == "stale"));
+        cleanup(&project);
+    }
+
+    #[test]
     fn scan_rejects_extension_magic_mismatch() {
         let project = temp_project("mismatch");
         write_image(&project.join("assets/images/not_jpeg.jpg"), 800, 450);
@@ -505,6 +581,38 @@ mod tests {
 root = "."
 manifest = "{manifest}"
 report = "{report}"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png"]
+
+[[preset]]
+name = "project-card"
+widths = [{width}]
+formats = ["webp", "jpeg"]
+quality = 82
+fit = "cover"
+aspect_ratio = "16:9"
+
+[budgets]
+{budget_line}
+"#
+            ),
+        )
+        .expect("config writes");
+    }
+
+    fn write_hashed_config_with_width(project: &Path, width: u32, budget_line: &str) {
+        fs::write(
+            project.join("devimg.toml"),
+            format!(
+                r#"[project]
+root = "."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+content_hash_filenames = true
 
 [[sources]]
 name = "portfolio"

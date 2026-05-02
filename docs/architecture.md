@@ -13,7 +13,7 @@ config -> scan -> plan -> execute -> manifest/report
 Core modules:
 
 - `scan`: source walking, glob matching, format detection, and image inspection.
-- `plan`: variant planning, output naming, dimensions, and operation hashing.
+- `plan`: variant planning, canonical output naming, dimensions, and operation hashing.
 - `transform`: image resize/crop/encode and safe writes.
 - `budget`: file and total byte budget evaluation.
 - `check`: manifest comparison and CI failure assembly.
@@ -22,6 +22,8 @@ Core modules:
 - `report`: Markdown report rendering.
 
 `devimg check` rebuilds the current plan, reads the manifest, and fails when outputs are missing, modified, stale, generated with an older config hash, or over budget.
+
+When `[project].content_hash_filenames = true`, `plan` keeps a canonical non-hash output path for operation identity, `transform` inserts the encoded output hash into the actual filename, and `check` matches manifest outputs by operation hash before validating the hashed file path.
 
 Exit codes:
 

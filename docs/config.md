@@ -9,6 +9,21 @@
 - `report`: Markdown report path relative to `root`.
 - `overwrite`: defaults to `false`; when false, changed existing outputs are refused.
 - `strip_metadata`: defaults to `true`; MVP re-encoding strips metadata.
+- `content_hash_filenames`: defaults to `false`; when true, generated output filenames include a short hash fragment derived from the encoded output bytes. Aliases: `hash_filenames`, `hashed_filenames`.
+
+Default filenames are deterministic:
+
+```text
+card.project-card.640.webp
+```
+
+Content-hash filenames are opt-in:
+
+```text
+card.project-card.640.abcdef123456.webp
+```
+
+Use content-hash filenames before applying immutable CDN cache headers to generated assets.
 
 ## Sources
 
@@ -29,7 +44,7 @@ Each `[[preset]]` entry has:
 - `name`
 - `widths`
 - `formats`: `png`, `jpeg`/`jpg`, `webp`
-- `quality`: `0..100`; currently applies to JPEG.
+- `quality`: `0..100`; applies to lossy JPEG and WebP output. PNG output remains lossless.
 - `fit`: `cover`, `contain`, or `fill`
 - `aspect_ratio`: optional, like `16:9` or `1200:630`
 - `allow_upscale`: defaults to `false`

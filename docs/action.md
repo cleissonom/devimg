@@ -18,7 +18,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.1
+      - uses: cleissonom/devimg/action@v0.1.2
         with:
           config: devimg.toml
           mode: check
@@ -28,6 +28,6 @@ Use `uses: ./action` plus `binary-path: target/debug/devimg` when testing the Ac
 
 `report-path` and `manifest-path` describe files for summary/output metadata. Configure the actual report and manifest paths in `devimg.toml`.
 
-The default `version` input is `v0.1.1`, which maps to release assets such as `devimg-linux-x86_64.tar.gz`.
+The default `version` input is `v0.1.2`, which maps to release assets such as `devimg-linux-x86_64.tar.gz`.
 
 The MVP does not post PR comments and does not commit generated image files.

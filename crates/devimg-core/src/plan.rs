@@ -60,6 +60,7 @@ pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
                         format: *format,
                         width: target_width,
                         height: target_height,
+                        content_hash_filenames: config.project.content_hash_filenames,
                         output_path,
                         output_project_path,
                         operation_hash: op_hash,
@@ -149,23 +150,35 @@ fn operation_hash(
     height: u32,
     output_path: &str,
 ) -> String {
-    hash_bytes(
-        format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-            config.config_hash,
-            source.hash,
-            source.project_path,
-            output_path,
-            preset.name,
-            preset.fit.label(),
-            preset.quality,
-            width,
-            height,
-            format.label(),
-            config.project.strip_metadata
-        )
-        .as_bytes(),
-    )
+    let mut input = format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        config.config_hash,
+        source.hash,
+        source.project_path,
+        output_path,
+        preset.name,
+        preset.fit.label(),
+        preset.quality,
+        width,
+        height,
+        format.label(),
+        config.project.strip_metadata,
+    );
+    if let Some(component) = encoder_hash_component(format) {
+        input.push('|');
+        input.push_str(component);
+    }
+    if config.project.content_hash_filenames {
+        input.push_str("|filename:content-hash-v1");
+    }
+    hash_bytes(input.as_bytes())
+}
+
+fn encoder_hash_component(format: FormatKind) -> Option<&'static str> {
+    match format {
+        FormatKind::Webp => Some("encoder:webp-libwebp-lossy-v1"),
+        FormatKind::Png | FormatKind::Jpeg => None,
+    }
 }
 
 pub(crate) fn cover_dimensions(

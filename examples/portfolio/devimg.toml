@@ -4,6 +4,7 @@ manifest = "public/images/devimg-manifest.json"
 report = "devimg-report.md"
 overwrite = false
 strip_metadata = true
+content_hash_filenames = false
 
 [[sources]]
 name = "portfolio"
@@ -52,4 +53,3 @@ allow_upscale = false
 max_total_bytes = "5mb"
 max_file_bytes = "900kb"
 fail_on_regression = true
-
