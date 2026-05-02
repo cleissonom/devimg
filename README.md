@@ -47,6 +47,7 @@ formats = ["webp", "jpeg"]
 quality = 82
 fit = "cover"
 aspect_ratio = "16:9"
+crop = "center"
 
 [budgets]
 max_total_bytes = "3mb"
@@ -67,6 +68,13 @@ Set `[project].content_hash_filenames = true` to include a generated-byte hash i
 ```
 
 Use hashed filenames before applying broad immutable CDN cache headers to generated assets.
+
+For `fit = "cover"`, `crop` controls which part of the resized image is preserved when the aspect ratio requires cropping. It defaults to `center`. Use anchors such as `top`, `bottom`, `left`, `right`, `top-left`, or a normalized focal point:
+
+```toml
+crop = "top"
+crop = { x = 0.5, y = 0.0 }
+```
 
 ## Safety
 
@@ -93,7 +101,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.2
+      - uses: cleissonom/devimg/action@v0.1.3
         with:
           config: devimg.toml
           mode: check
@@ -114,8 +122,8 @@ cargo test --all
 Create a version tag that matches the workspace version and push it:
 
 ```bash
-git tag v0.1.2
-git push origin v0.1.2
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

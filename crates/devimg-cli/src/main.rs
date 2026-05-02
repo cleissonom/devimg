@@ -207,6 +207,7 @@ formats = ["webp", "jpeg"]
 quality = 82
 fit = "cover"
 aspect_ratio = "16:9"
+crop = "center"
 
 [[preset]]
 name = "open-graph"
@@ -215,6 +216,7 @@ formats = ["png", "webp"]
 quality = 90
 fit = "cover"
 aspect_ratio = "1200:630"
+crop = "center"
 
 [[preset]]
 name = "avatar"
@@ -223,6 +225,7 @@ formats = ["webp", "jpeg"]
 quality = 86
 fit = "cover"
 aspect_ratio = "1:1"
+crop = "center"
 
 [[preset]]
 name = "hero"
@@ -231,6 +234,7 @@ formats = ["webp", "jpeg"]
 quality = 84
 fit = "cover"
 aspect_ratio = "21:9"
+crop = "center"
 
 [budgets]
 max_total_bytes = "3mb"

@@ -47,7 +47,21 @@ Each `[[preset]]` entry has:
 - `quality`: `0..100`; applies to lossy JPEG and WebP output. PNG output remains lossless.
 - `fit`: `cover`, `contain`, or `fill`
 - `aspect_ratio`: optional, like `16:9` or `1200:630`
+- `crop`: optional cover-crop position; defaults to `center`
 - `allow_upscale`: defaults to `false`
+
+`crop` only affects `fit = "cover"`. String anchors are:
+
+- `center`
+- `top`, `bottom`, `left`, `right`
+- `top-left`, `top-right`, `bottom-left`, `bottom-right`
+
+For more precise composition, use a normalized focal point where `0.0` is the left/top edge and `1.0` is the right/bottom edge:
+
+```toml
+crop = "top"
+crop = { x = 0.5, y = 0.0 }
+```
 
 ## Budgets
 

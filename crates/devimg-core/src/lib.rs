@@ -10,8 +10,8 @@ mod scan;
 mod transform;
 
 pub use config::{
-    load_config, AspectRatio, BudgetConfig, Config, FitMode, FormatKind, PresetConfig,
-    ProjectConfig, SourceConfig,
+    load_config, AspectRatio, BudgetConfig, Config, CropPosition, FitMode, FormatKind,
+    PresetConfig, ProjectConfig, SourceConfig,
 };
 pub use hash::{hash_bytes, hash_file};
 pub use manifest::{read_manifest, write_manifest, Manifest, ManifestOutput};

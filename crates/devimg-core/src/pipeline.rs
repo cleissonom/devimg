@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::budget::evaluate_budgets;
 pub use crate::check::check;
-use crate::config::{resolve_project_path_checked, Config, FitMode, FormatKind};
+use crate::config::{resolve_project_path_checked, Config, CropPosition, FitMode, FormatKind};
 use crate::manifest::{write_manifest, Manifest};
 pub use crate::plan::build_plan;
 use crate::report::render_run_report;
@@ -32,6 +32,7 @@ pub struct Operation {
     pub source: SourceImage,
     pub preset: String,
     pub fit: FitMode,
+    pub crop: CropPosition,
     pub quality: u8,
     pub format: FormatKind,
     pub width: u32,
@@ -368,6 +369,41 @@ mod tests {
     }
 
     #[test]
+    fn crop_config_changes_operation_hashes_and_check_status() {
+        let project = temp_project("check_crop_change");
+        write_image(&project.join("assets/images/card.png"), 800, 1200);
+        write_config_with_crop(&project, r#"crop = "center""#);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        let sources = scan_sources(&config).expect("scan succeeds");
+        let center_hash = build_plan(&config, &sources)
+            .expect("plan succeeds")
+            .operations[0]
+            .operation_hash
+            .clone();
+        optimize(&config, OptimizeOptions::default()).expect("optimize succeeds");
+
+        write_config_with_crop(&project, r#"crop = "top""#);
+        let changed_config = load_config(project.join("devimg.toml")).expect("config reloads");
+        let changed_sources = scan_sources(&changed_config).expect("scan succeeds");
+        let top_hash = build_plan(&changed_config, &changed_sources)
+            .expect("changed plan succeeds")
+            .operations[0]
+            .operation_hash
+            .clone();
+        let result = check(&changed_config).expect("check runs");
+
+        assert_ne!(center_hash, top_hash);
+        assert!(!result.passed);
+        assert!(result
+            .result
+            .issues
+            .iter()
+            .any(|issue| issue.kind == "outdated_config"));
+        cleanup(&project);
+    }
+
+    #[test]
     fn content_hash_filenames_use_generated_byte_hashes() {
         let project = temp_project("hash_filenames");
         write_image(&project.join("assets/images/card.png"), 800, 450);
@@ -565,6 +601,38 @@ mod tests {
             width,
             budget_line,
         );
+    }
+
+    fn write_config_with_crop(project: &Path, crop_line: &str) {
+        fs::write(
+            project.join("devimg.toml"),
+            format!(
+                r#"[project]
+root = "."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png"]
+
+[[preset]]
+name = "project-card"
+widths = [640]
+formats = ["webp"]
+quality = 82
+fit = "cover"
+aspect_ratio = "16:9"
+{crop_line}
+
+[budgets]
+max_total_bytes = "5mb"
+"#
+            ),
+        )
+        .expect("config writes");
     }
 
     fn write_config_with_paths(

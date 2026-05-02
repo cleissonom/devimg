@@ -43,6 +43,7 @@ pub struct PresetConfig {
     pub formats: Vec<FormatKind>,
     pub quality: u8,
     pub fit: FitMode,
+    pub crop: CropPosition,
     pub aspect_ratio: Option<AspectRatio>,
     pub allow_upscale: bool,
 }
@@ -59,6 +60,12 @@ pub enum FitMode {
     Cover,
     Contain,
     Fill,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CropPosition {
+    pub x: f32,
+    pub y: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -160,6 +167,77 @@ impl<'de> Deserialize<'de> for FitMode {
         let raw = String::deserialize(deserializer)?;
         Self::parse(&raw)
             .ok_or_else(|| serde::de::Error::custom(format!("unsupported fit `{raw}`")))
+    }
+}
+
+impl Default for CropPosition {
+    fn default() -> Self {
+        Self::CENTER
+    }
+}
+
+impl CropPosition {
+    pub const CENTER: Self = Self { x: 0.5, y: 0.5 };
+
+    pub fn label(self) -> String {
+        format!("crop:{:.4}:{:.4}", self.x, self.y)
+    }
+
+    fn parse_anchor(raw: &str) -> Option<Self> {
+        match normalize_crop_anchor(raw).as_str() {
+            "center" => Some(Self::CENTER),
+            "top" => Some(Self { x: 0.5, y: 0.0 }),
+            "bottom" => Some(Self { x: 0.5, y: 1.0 }),
+            "left" => Some(Self { x: 0.0, y: 0.5 }),
+            "right" => Some(Self { x: 1.0, y: 0.5 }),
+            "top-left" => Some(Self { x: 0.0, y: 0.0 }),
+            "top-right" => Some(Self { x: 1.0, y: 0.0 }),
+            "bottom-left" => Some(Self { x: 0.0, y: 1.0 }),
+            "bottom-right" => Some(Self { x: 1.0, y: 1.0 }),
+            _ => None,
+        }
+    }
+
+    fn new(x: f32, y: f32) -> std::result::Result<Self, String> {
+        if !x.is_finite() || !y.is_finite() {
+            return Err("crop x and y must be finite numbers".to_string());
+        }
+        if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) {
+            return Err("crop x and y must be between 0.0 and 1.0".to_string());
+        }
+        Ok(Self { x, y })
+    }
+}
+
+fn normalize_crop_anchor(raw: &str) -> String {
+    raw.trim().to_ascii_lowercase().replace(['_', ' '], "-")
+}
+
+impl<'de> Deserialize<'de> for CropPosition {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum CropValue {
+            Anchor(String),
+            Point(CropPoint),
+        }
+
+        #[derive(Deserialize)]
+        struct CropPoint {
+            x: f32,
+            y: f32,
+        }
+
+        match CropValue::deserialize(deserializer)? {
+            CropValue::Anchor(raw) => Self::parse_anchor(&raw)
+                .ok_or_else(|| serde::de::Error::custom(format!("unsupported crop `{raw}`"))),
+            CropValue::Point(point) => {
+                Self::new(point.x, point.y).map_err(serde::de::Error::custom)
+            }
+        }
     }
 }
 
@@ -312,6 +390,7 @@ impl RawConfig {
                 formats,
                 quality,
                 fit: preset.fit.unwrap_or(FitMode::Cover),
+                crop: preset.crop.unwrap_or_default(),
                 aspect_ratio: preset.aspect_ratio,
                 allow_upscale: preset.allow_upscale.unwrap_or(false),
             });
@@ -383,6 +462,8 @@ struct RawPresetConfig {
     formats: Option<Vec<FormatKind>>,
     quality: Option<u8>,
     fit: Option<FitMode>,
+    #[serde(alias = "crop_anchor", alias = "crop_position", alias = "focal_point")]
+    crop: Option<CropPosition>,
     aspect_ratio: Option<AspectRatio>,
     #[serde(alias = "upscale")]
     allow_upscale: Option<bool>,
@@ -476,7 +557,7 @@ fn reject_unknown_top_level(path: &Path, value: &toml::Value) -> Result<()> {
 mod tests {
     use std::path::Path;
 
-    use super::{parse_config, FitMode, FormatKind};
+    use super::{parse_config, CropPosition, FitMode, FormatKind};
 
     #[test]
     fn parses_minimal_config() {
@@ -512,6 +593,7 @@ fail_on_regression = true
             vec![FormatKind::Webp, FormatKind::Jpeg]
         );
         assert_eq!(config.presets[0].fit, FitMode::Cover);
+        assert_eq!(config.presets[0].crop, CropPosition::CENTER);
         assert_eq!(config.budgets.max_file_bytes, Some(350 * 1024));
     }
 
@@ -539,6 +621,72 @@ upscale = true
         assert!(config.presets[0].allow_upscale);
         assert_eq!(config.presets[0].quality, 82);
         assert_eq!(config.presets[0].formats, vec![FormatKind::Jpeg]);
+    }
+
+    #[test]
+    fn parses_crop_anchor() {
+        let raw = r#"
+[project]
+manifest = "public/images/devimg-manifest.json"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+
+[[preset]]
+name = "project-card"
+widths = [640]
+formats = ["webp"]
+crop = "top-right"
+"#;
+        let config = parse_config(Path::new("devimg.toml"), raw).expect("config parses");
+
+        assert_eq!(config.presets[0].crop, CropPosition { x: 1.0, y: 0.0 });
+    }
+
+    #[test]
+    fn parses_crop_focal_point() {
+        let raw = r#"
+[project]
+manifest = "public/images/devimg-manifest.json"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+
+[[preset]]
+name = "project-card"
+widths = [640]
+formats = ["webp"]
+crop = { x = 0.5, y = 0.0 }
+"#;
+        let config = parse_config(Path::new("devimg.toml"), raw).expect("config parses");
+
+        assert_eq!(config.presets[0].crop, CropPosition { x: 0.5, y: 0.0 });
+    }
+
+    #[test]
+    fn rejects_invalid_crop_focal_point() {
+        let raw = r#"
+[project]
+manifest = "public/images/devimg-manifest.json"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+
+[[preset]]
+name = "project-card"
+widths = [640]
+formats = ["webp"]
+crop = { x = 0.5, y = 1.5 }
+"#;
+        let error = parse_config(Path::new("devimg.toml"), raw).expect_err("config fails");
+
+        assert!(error.to_string().contains("crop x and y"));
     }
 
     #[test]

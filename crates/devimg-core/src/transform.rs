@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use image::{imageops::FilterType, DynamicImage};
 
-use crate::config::{FitMode, FormatKind};
+use crate::config::{CropPosition, FitMode, FormatKind};
 use crate::hash::{hash_bytes, hash_file};
 use crate::manifest::ManifestOutput;
 use crate::pipeline::Operation;
@@ -23,6 +23,7 @@ pub(crate) fn execute_operation(
     let processed = transform_image(
         source_image,
         operation.fit,
+        operation.crop,
         operation.width,
         operation.height,
     );
@@ -139,7 +140,13 @@ fn hash_fragment(hash: &str) -> &str {
     &raw[..raw.len().min(12)]
 }
 
-fn transform_image(image: DynamicImage, fit: FitMode, width: u32, height: u32) -> DynamicImage {
+fn transform_image(
+    image: DynamicImage,
+    fit: FitMode,
+    crop: CropPosition,
+    width: u32,
+    height: u32,
+) -> DynamicImage {
     match fit {
         FitMode::Fill => image.resize_exact(width, height, FilterType::Lanczos3),
         FitMode::Contain => image.resize(width, height, FilterType::Lanczos3),
@@ -147,11 +154,15 @@ fn transform_image(image: DynamicImage, fit: FitMode, width: u32, height: u32) -
             let (resize_width, resize_height) =
                 crate::plan::cover_dimensions(image.width(), image.height(), width, height);
             let resized = image.resize_exact(resize_width, resize_height, FilterType::Lanczos3);
-            let x = resize_width.saturating_sub(width) / 2;
-            let y = resize_height.saturating_sub(height) / 2;
+            let x = crop_offset(resize_width.saturating_sub(width), crop.x);
+            let y = crop_offset(resize_height.saturating_sub(height), crop.y);
             resized.crop_imm(x, y, width, height)
         }
     }
+}
+
+fn crop_offset(overflow: u32, position: f32) -> u32 {
+    ((overflow as f32) * position).round() as u32
 }
 
 fn encode_image(
@@ -205,7 +216,7 @@ fn safe_write(path: &Path, bytes: &[u8], allow_replace: bool) -> Result<()> {
 mod tests {
     use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
 
-    use crate::config::{FitMode, FormatKind};
+    use crate::config::{CropPosition, FitMode, FormatKind};
 
     use super::{encode_image, transform_image};
 
@@ -240,11 +251,108 @@ mod tests {
             };
         }
 
-        let cropped = transform_image(DynamicImage::ImageRgba8(source), FitMode::Cover, 2, 2);
+        let cropped = transform_image(
+            DynamicImage::ImageRgba8(source),
+            FitMode::Cover,
+            CropPosition::CENTER,
+            2,
+            2,
+        );
 
         assert_eq!((cropped.width(), cropped.height()), (2, 2));
         let pixels = cropped.to_rgba8();
         assert!(pixels.pixels().all(|pixel| pixel.0 == [0, 255, 0, 255]));
+    }
+
+    #[test]
+    fn cover_crop_honors_vertical_anchors() {
+        let source = vertical_stripes();
+
+        let top = transform_image(
+            DynamicImage::ImageRgba8(source.clone()),
+            FitMode::Cover,
+            CropPosition { x: 0.5, y: 0.0 },
+            2,
+            2,
+        )
+        .to_rgba8();
+        let bottom = transform_image(
+            DynamicImage::ImageRgba8(source),
+            FitMode::Cover,
+            CropPosition { x: 0.5, y: 1.0 },
+            2,
+            2,
+        )
+        .to_rgba8();
+
+        assert!(top.pixels().all(|pixel| pixel.0 == [255, 0, 0, 255]));
+        assert!(bottom.pixels().all(|pixel| pixel.0 == [0, 0, 255, 255]));
+    }
+
+    #[test]
+    fn cover_crop_honors_horizontal_anchors() {
+        let source = horizontal_stripes();
+
+        let left = transform_image(
+            DynamicImage::ImageRgba8(source.clone()),
+            FitMode::Cover,
+            CropPosition { x: 0.0, y: 0.5 },
+            2,
+            2,
+        )
+        .to_rgba8();
+        let right = transform_image(
+            DynamicImage::ImageRgba8(source),
+            FitMode::Cover,
+            CropPosition { x: 1.0, y: 0.5 },
+            2,
+            2,
+        )
+        .to_rgba8();
+
+        assert!(left.pixels().all(|pixel| pixel.0 == [255, 0, 0, 255]));
+        assert!(right.pixels().all(|pixel| pixel.0 == [0, 0, 255, 255]));
+    }
+
+    #[test]
+    fn cover_crop_honors_custom_normalized_position() {
+        let source = vertical_stripes();
+
+        let cropped = transform_image(
+            DynamicImage::ImageRgba8(source),
+            FitMode::Cover,
+            CropPosition { x: 0.5, y: 0.25 },
+            2,
+            2,
+        )
+        .to_rgba8();
+
+        assert_eq!(cropped.get_pixel(0, 0).0, [255, 0, 0, 255]);
+        assert_eq!(cropped.get_pixel(0, 1).0, [0, 255, 0, 255]);
+    }
+
+    fn horizontal_stripes() -> RgbaImage {
+        let mut source = RgbaImage::new(6, 2);
+        for (x, _y, pixel) in source.enumerate_pixels_mut() {
+            *pixel = match x {
+                0 | 1 => Rgba([255, 0, 0, 255]),
+                2 | 3 => Rgba([0, 255, 0, 255]),
+                _ => Rgba([0, 0, 255, 255]),
+            };
+        }
+        source
+    }
+
+    fn vertical_stripes() -> RgbaImage {
+        let mut source = RgbaImage::new(2, 6);
+        for (_x, y, pixel) in source.enumerate_pixels_mut() {
+            *pixel = match y {
+                0 | 1 => Rgba([255, 0, 0, 255]),
+                2 | 3 => Rgba([0, 255, 0, 255]),
+                _ => Rgba([0, 0, 255, 255]),
+            };
+        }
+        source
     }
 
     fn detailed_image(width: u32, height: u32) -> DynamicImage {

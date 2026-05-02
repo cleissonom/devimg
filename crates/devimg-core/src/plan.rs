@@ -56,6 +56,7 @@ pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
                         source: source.clone(),
                         preset: preset.name.clone(),
                         fit: preset.fit,
+                        crop: preset.crop,
                         quality: preset.quality,
                         format: *format,
                         width: target_width,
@@ -151,13 +152,14 @@ fn operation_hash(
     output_path: &str,
 ) -> String {
     let mut input = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         config.config_hash,
         source.hash,
         source.project_path,
         output_path,
         preset.name,
         preset.fit.label(),
+        preset.crop.label(),
         preset.quality,
         width,
         height,

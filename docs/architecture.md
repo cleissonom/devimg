@@ -14,7 +14,7 @@ Core modules:
 
 - `scan`: source walking, glob matching, format detection, and image inspection.
 - `plan`: variant planning, canonical output naming, dimensions, and operation hashing.
-- `transform`: image resize/crop/encode and safe writes.
+- `transform`: image resize, cover-crop positioning, encode, and safe writes.
 - `budget`: file and total byte budget evaluation.
 - `check`: manifest comparison and CI failure assembly.
 - `pipeline`: public result types and the high-level optimize flow.

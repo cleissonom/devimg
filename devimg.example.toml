@@ -20,6 +20,7 @@ formats = ["webp", "jpeg"]
 quality = 82
 fit = "cover"
 aspect_ratio = "16:9"
+crop = "center"
 allow_upscale = false
 
 [[preset]]
@@ -29,6 +30,7 @@ formats = ["png", "webp"]
 quality = 90
 fit = "cover"
 aspect_ratio = "1200:630"
+crop = "center"
 allow_upscale = false
 
 [[preset]]
@@ -38,6 +40,7 @@ formats = ["webp", "jpeg"]
 quality = 86
 fit = "cover"
 aspect_ratio = "1:1"
+crop = "center"
 allow_upscale = false
 
 [[preset]]
@@ -47,6 +50,7 @@ formats = ["webp", "jpeg"]
 quality = 84
 fit = "cover"
 aspect_ratio = "21:9"
+crop = "center"
 allow_upscale = false
 
 [budgets]
