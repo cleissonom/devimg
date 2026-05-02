@@ -13,7 +13,7 @@ config -> scan -> plan -> execute -> manifest/report
 Core modules:
 
 - `scan`: source walking, glob matching, format detection, and image inspection.
-- `plan`: variant planning, canonical output naming, dimensions, and operation hashing.
+- `plan`: variant planning, source-specific preset overrides, canonical output naming, dimensions, and operation hashing.
 - `transform`: image resize, cover-crop positioning, encode, and safe writes.
 - `budget`: file and total byte budget evaluation.
 - `check`: manifest comparison and CI failure assembly.

@@ -236,6 +236,11 @@ fit = "cover"
 aspect_ratio = "21:9"
 crop = "center"
 
+# Optional source-specific transform override. Paths are relative to the source input.
+# [[overrides]]
+# include = ["diagrams/**"]
+# fit = "contain"
+
 [budgets]
 max_total_bytes = "3mb"
 max_file_bytes = "350kb"

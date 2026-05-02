@@ -404,6 +404,57 @@ mod tests {
     }
 
     #[test]
+    fn preset_overrides_apply_to_matching_sources_only() {
+        let project = temp_project("preset_override");
+        write_image(&project.join("assets/images/card.png"), 800, 450);
+        write_image(&project.join("assets/images/cli_tools.png"), 1731, 909);
+        write_config_with_override(&project, true);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        let sources = scan_sources(&config).expect("scan succeeds");
+        let plan = build_plan(&config, &sources).expect("plan succeeds");
+
+        let card = plan
+            .operations
+            .iter()
+            .find(|operation| operation.source.project_path.ends_with("card.png"))
+            .expect("card operation exists");
+        let cli_tools = plan
+            .operations
+            .iter()
+            .find(|operation| operation.source.project_path.ends_with("cli_tools.png"))
+            .expect("cli tools operation exists");
+
+        assert_eq!((card.width, card.height), (640, 360));
+        assert_eq!(card.fit, crate::FitMode::Cover);
+        assert_eq!((cli_tools.width, cli_tools.height), (640, 336));
+        assert_eq!(cli_tools.fit, crate::FitMode::Contain);
+        cleanup(&project);
+    }
+
+    #[test]
+    fn preset_override_changes_make_check_stale() {
+        let project = temp_project("override_stale");
+        write_image(&project.join("assets/images/cli_tools.png"), 1731, 909);
+        write_config_with_override(&project, true);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        optimize(&config, OptimizeOptions::default()).expect("optimize succeeds");
+
+        write_config_with_override(&project, false);
+        let changed_config = load_config(project.join("devimg.toml")).expect("config reloads");
+        let result = check(&changed_config).expect("check runs");
+
+        assert!(!result.passed);
+        assert!(result
+            .result
+            .issues
+            .iter()
+            .any(|issue| issue.kind == "outdated_config"));
+        cleanup(&project);
+    }
+
+    #[test]
     fn content_hash_filenames_use_generated_byte_hashes() {
         let project = temp_project("hash_filenames");
         write_image(&project.join("assets/images/card.png"), 800, 450);
@@ -626,6 +677,47 @@ quality = 82
 fit = "cover"
 aspect_ratio = "16:9"
 {crop_line}
+
+[budgets]
+max_total_bytes = "5mb"
+"#
+            ),
+        )
+        .expect("config writes");
+    }
+
+    fn write_config_with_override(project: &Path, include_override: bool) {
+        let override_section = if include_override {
+            r#"
+[[overrides]]
+include = ["cli_tools.png"]
+fit = "contain"
+"#
+        } else {
+            ""
+        };
+        fs::write(
+            project.join("devimg.toml"),
+            format!(
+                r#"[project]
+root = "."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png"]
+
+[[preset]]
+name = "project-card"
+widths = [640]
+formats = ["webp"]
+quality = 82
+fit = "cover"
+aspect_ratio = "16:9"
+{override_section}
 
 [budgets]
 max_total_bytes = "5mb"

@@ -11,7 +11,7 @@ mod transform;
 
 pub use config::{
     load_config, AspectRatio, BudgetConfig, Config, CropPosition, FitMode, FormatKind,
-    PresetConfig, ProjectConfig, SourceConfig,
+    PresetConfig, PresetOverrideConfig, ProjectConfig, SourceConfig,
 };
 pub use hash::{hash_bytes, hash_file};
 pub use manifest::{read_manifest, write_manifest, Manifest, ManifestOutput};

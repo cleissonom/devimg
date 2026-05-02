@@ -167,7 +167,11 @@ fn path_is_under(path: &Path, parent: &Path) -> bool {
     !parent.as_os_str().is_empty() && path.starts_with(parent)
 }
 
-fn compile_globs(config_path: &Path, label: &str, patterns: &[String]) -> Result<GlobSet> {
+pub(crate) fn compile_globs(
+    config_path: &Path,
+    label: &str,
+    patterns: &[String],
+) -> Result<GlobSet> {
     let mut builder = GlobSetBuilder::new();
     for pattern in patterns {
         add_glob(config_path, label, &mut builder, pattern)?;

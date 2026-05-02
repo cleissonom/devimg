@@ -76,6 +76,14 @@ crop = "top"
 crop = { x = 0.5, y = 0.0 }
 ```
 
+Use `[[overrides]]` to keep shared presets while changing transform behavior for specific source paths. Override paths are relative to the matching source input:
+
+```toml
+[[overrides]]
+include = ["cli_tools.png"]
+fit = "contain"
+```
+
 ## Safety
 
 - `optimize --dry-run` plans work without writing files.
@@ -101,7 +109,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.3
+      - uses: cleissonom/devimg/action@v0.1.4
         with:
           config: devimg.toml
           mode: check
@@ -122,8 +130,8 @@ cargo test --all
 Create a version tag that matches the workspace version and push it:
 
 ```bash
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

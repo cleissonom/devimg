@@ -1,13 +1,19 @@
 use std::path::{Path, PathBuf};
 
-use crate::config::{project_relative, AspectRatio, Config, FitMode, FormatKind, PresetConfig};
+use globset::GlobSet;
+
+use crate::config::{
+    project_relative, AspectRatio, Config, FitMode, FormatKind, PresetConfig, PresetOverrideConfig,
+};
 use crate::hash::hash_bytes;
 use crate::pipeline::{path_to_string, Operation, Plan, SourceImage};
+use crate::scan::compile_globs;
 use crate::{DevimgError, Result};
 
 pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
     let mut operations = Vec::new();
     let mut warnings = Vec::new();
+    let overrides = compile_overrides(config)?;
     if !config.project.strip_metadata {
         warnings.push(
             "strip_metadata=false was requested, but MVP encoders re-encode images and do not preserve source metadata"
@@ -18,16 +24,17 @@ pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
     for source in sources {
         let mut planned_for_source = 0usize;
         for preset in &config.presets {
-            for width in &preset.widths {
+            let effective_preset = apply_overrides(source, preset, &overrides);
+            for width in &effective_preset.widths {
                 let (target_width, target_height) =
-                    target_dimensions(source.width, source.height, *width, preset);
-                if !preset.allow_upscale
+                    target_dimensions(source.width, source.height, *width, &effective_preset);
+                if !effective_preset.allow_upscale
                     && (target_width > source.width || target_height > source.height)
                 {
                     warnings.push(format!(
                         "skipped {} preset {} width {} because it would require upscaling from {}x{} to {}x{}",
                         source.project_path,
-                        preset.name,
+                        effective_preset.name,
                         width,
                         source.width,
                         source.height,
@@ -36,8 +43,8 @@ pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
                     ));
                     continue;
                 }
-                for format in &preset.formats {
-                    let output_path = output_path_for(source, preset, *width, *format)?;
+                for format in &effective_preset.formats {
+                    let output_path = output_path_for(source, &effective_preset, *width, *format)?;
                     if output_path == source.path {
                         return Err(DevimgError::UnsafeOverwrite { path: output_path });
                     }
@@ -46,7 +53,7 @@ pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
                     let op_hash = operation_hash(
                         config,
                         source,
-                        preset,
+                        &effective_preset,
                         *format,
                         target_width,
                         target_height,
@@ -54,10 +61,10 @@ pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
                     );
                     operations.push(Operation {
                         source: source.clone(),
-                        preset: preset.name.clone(),
-                        fit: preset.fit,
-                        crop: preset.crop,
-                        quality: preset.quality,
+                        preset: effective_preset.name.clone(),
+                        fit: effective_preset.fit,
+                        crop: effective_preset.crop,
+                        quality: effective_preset.quality,
                         format: *format,
                         width: target_width,
                         height: target_height,
@@ -181,6 +188,83 @@ fn encoder_hash_component(format: FormatKind) -> Option<&'static str> {
         FormatKind::Webp => Some("encoder:webp-libwebp-lossy-v1"),
         FormatKind::Png | FormatKind::Jpeg => None,
     }
+}
+
+struct CompiledPresetOverride<'a> {
+    config: &'a PresetOverrideConfig,
+    includes: GlobSet,
+    excludes: GlobSet,
+}
+
+fn compile_overrides(config: &Config) -> Result<Vec<CompiledPresetOverride<'_>>> {
+    config
+        .overrides
+        .iter()
+        .map(|preset_override| {
+            Ok(CompiledPresetOverride {
+                config: preset_override,
+                includes: compile_globs(
+                    &config.path,
+                    "override include",
+                    &preset_override.include,
+                )?,
+                excludes: compile_globs(
+                    &config.path,
+                    "override exclude",
+                    &preset_override.exclude,
+                )?,
+            })
+        })
+        .collect()
+}
+
+fn apply_overrides(
+    source: &SourceImage,
+    preset: &PresetConfig,
+    overrides: &[CompiledPresetOverride<'_>],
+) -> PresetConfig {
+    let mut effective = preset.clone();
+    let relative_path = path_to_string(&source.relative_path);
+    for preset_override in overrides {
+        if !override_matches(preset_override, &relative_path, &preset.name) {
+            continue;
+        }
+        if let Some(quality) = preset_override.config.quality {
+            effective.quality = quality;
+        }
+        if let Some(fit) = preset_override.config.fit {
+            effective.fit = fit;
+        }
+        if let Some(crop) = preset_override.config.crop {
+            effective.crop = crop;
+        }
+        if let Some(allow_upscale) = preset_override.config.allow_upscale {
+            effective.allow_upscale = allow_upscale;
+        }
+    }
+    effective
+}
+
+fn override_matches(
+    preset_override: &CompiledPresetOverride<'_>,
+    relative_path: &str,
+    preset_name: &str,
+) -> bool {
+    if !preset_override.config.presets.is_empty()
+        && !preset_override
+            .config
+            .presets
+            .iter()
+            .any(|candidate| candidate == preset_name)
+    {
+        return false;
+    }
+    if !preset_override.config.include.is_empty()
+        && !preset_override.includes.is_match(relative_path)
+    {
+        return false;
+    }
+    !preset_override.excludes.is_match(relative_path)
 }
 
 pub(crate) fn cover_dimensions(

@@ -15,3 +15,4 @@ Intentional changes:
 - PNG, JPEG, and WebP are the only MVP formats.
 - The manifest stores BLAKE3 config, content, and operation hashes so CI can detect stale outputs without relying on timestamps.
 - Cover crop positioning is now configurable with anchors or normalized focal points.
+- Source-specific preset overrides are opt-in; configs keep global preset behavior until `[[overrides]]` entries are added.

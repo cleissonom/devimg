@@ -14,6 +14,7 @@ pub struct Config {
     pub project: ProjectConfig,
     pub sources: Vec<SourceConfig>,
     pub presets: Vec<PresetConfig>,
+    pub overrides: Vec<PresetOverrideConfig>,
     pub budgets: BudgetConfig,
 }
 
@@ -46,6 +47,17 @@ pub struct PresetConfig {
     pub crop: CropPosition,
     pub aspect_ratio: Option<AspectRatio>,
     pub allow_upscale: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct PresetOverrideConfig {
+    pub include: Vec<String>,
+    pub exclude: Vec<String>,
+    pub presets: Vec<String>,
+    pub quality: Option<u8>,
+    pub fit: Option<FitMode>,
+    pub crop: Option<CropPosition>,
+    pub allow_upscale: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -342,6 +354,8 @@ struct RawConfig {
     sources: Vec<RawSourceConfig>,
     #[serde(alias = "presets")]
     preset: Vec<RawPresetConfig>,
+    #[serde(alias = "override")]
+    overrides: Vec<RawPresetOverrideConfig>,
     budgets: RawBudgetConfig,
 }
 
@@ -396,6 +410,23 @@ impl RawConfig {
             });
         }
 
+        let mut overrides = Vec::new();
+        for preset_override in self.overrides {
+            let quality = preset_override.quality;
+            if quality.is_some_and(|quality| quality > 100) {
+                return Err(DevimgError::config(path, "override quality must be 0-100"));
+            }
+            overrides.push(PresetOverrideConfig {
+                include: preset_override.include,
+                exclude: preset_override.exclude,
+                presets: preset_override.presets,
+                quality,
+                fit: preset_override.fit,
+                crop: preset_override.crop,
+                allow_upscale: preset_override.allow_upscale,
+            });
+        }
+
         if sources.is_empty() {
             return Err(DevimgError::config(
                 path,
@@ -422,6 +453,7 @@ impl RawConfig {
             },
             sources,
             presets,
+            overrides,
             budgets: BudgetConfig {
                 max_total_bytes: self.budgets.max_total_bytes,
                 max_file_bytes: self.budgets.max_file_bytes,
@@ -465,6 +497,20 @@ struct RawPresetConfig {
     #[serde(alias = "crop_anchor", alias = "crop_position", alias = "focal_point")]
     crop: Option<CropPosition>,
     aspect_ratio: Option<AspectRatio>,
+    #[serde(alias = "upscale")]
+    allow_upscale: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default)]
+struct RawPresetOverrideConfig {
+    include: Vec<String>,
+    exclude: Vec<String>,
+    presets: Vec<String>,
+    quality: Option<u8>,
+    fit: Option<FitMode>,
+    #[serde(alias = "crop_anchor", alias = "crop_position", alias = "focal_point")]
+    crop: Option<CropPosition>,
     #[serde(alias = "upscale")]
     allow_upscale: Option<bool>,
 }
@@ -542,7 +588,14 @@ fn reject_unknown_top_level(path: &Path, value: &toml::Value) -> Result<()> {
     for key in table.keys() {
         if !matches!(
             key.as_str(),
-            "project" | "sources" | "source" | "preset" | "presets" | "budgets"
+            "project"
+                | "sources"
+                | "source"
+                | "preset"
+                | "presets"
+                | "overrides"
+                | "override"
+                | "budgets"
         ) {
             return Err(DevimgError::config(
                 path,
@@ -709,6 +762,69 @@ formats = ["webp"]
         let config = parse_config(Path::new("devimg.toml"), raw).expect("config parses");
 
         assert!(config.project.content_hash_filenames);
+    }
+
+    #[test]
+    fn parses_preset_overrides() {
+        let raw = r#"
+[project]
+manifest = "public/images/devimg-manifest.json"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+
+[[preset]]
+name = "project-card"
+widths = [640]
+formats = ["webp"]
+
+[[overrides]]
+include = ["cli_tools.png"]
+presets = ["project-card"]
+quality = 74
+fit = "contain"
+crop = "top"
+upscale = true
+"#;
+        let config = parse_config(Path::new("devimg.toml"), raw).expect("config parses");
+
+        assert_eq!(config.overrides.len(), 1);
+        assert_eq!(config.overrides[0].include, vec!["cli_tools.png"]);
+        assert_eq!(config.overrides[0].presets, vec!["project-card"]);
+        assert_eq!(config.overrides[0].quality, Some(74));
+        assert_eq!(config.overrides[0].fit, Some(FitMode::Contain));
+        assert_eq!(
+            config.overrides[0].crop,
+            Some(CropPosition { x: 0.5, y: 0.0 })
+        );
+        assert_eq!(config.overrides[0].allow_upscale, Some(true));
+    }
+
+    #[test]
+    fn rejects_invalid_override_quality() {
+        let raw = r#"
+[project]
+manifest = "public/images/devimg-manifest.json"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+
+[[preset]]
+name = "project-card"
+widths = [640]
+formats = ["webp"]
+
+[[overrides]]
+include = ["card.png"]
+quality = 101
+"#;
+        let error = parse_config(Path::new("devimg.toml"), raw).expect_err("config fails");
+
+        assert!(error.to_string().contains("override quality"));
     }
 
     #[test]
