@@ -59,6 +59,12 @@ runs:
           echo "bin=$(command -v devimg)" >> "$GITHUB_OUTPUT"
         else
           os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          case "$os" in
+            linux*) os="linux"; bin_name="devimg" ;;
+            darwin*) os="darwin"; bin_name="devimg" ;;
+            mingw*|msys*|cygwin*) os="windows"; bin_name="devimg.exe" ;;
+            *) echo "Unsupported operating system: $os" >&2; exit 1 ;;
+          esac
           arch="$(uname -m)"
           case "$arch" in
             x86_64|amd64) arch="x86_64" ;;
@@ -69,8 +75,8 @@ runs:
           mkdir -p "$RUNNER_TEMP/devimg"
           curl -fsSL "$url" -o "$RUNNER_TEMP/devimg/devimg.tar.gz"
           tar -xzf "$RUNNER_TEMP/devimg/devimg.tar.gz" -C "$RUNNER_TEMP/devimg"
-          chmod +x "$RUNNER_TEMP/devimg/devimg"
-          echo "bin=$RUNNER_TEMP/devimg/devimg" >> "$GITHUB_OUTPUT"
+          chmod +x "$RUNNER_TEMP/devimg/$bin_name"
+          echo "bin=$RUNNER_TEMP/devimg/$bin_name" >> "$GITHUB_OUTPUT"
         fi
     - id: run
       shell: bash
