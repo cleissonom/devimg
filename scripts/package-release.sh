@@ -37,7 +37,7 @@ cp "$binary" "$staging/$binary_name"
 
 (
   cd "$staging"
-  tar -czf "$archive" "$binary_name"
+  tar -czf "../$asset_base.tar.gz" "$binary_name"
 )
 
 (
