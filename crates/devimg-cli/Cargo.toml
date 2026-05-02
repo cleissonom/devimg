@@ -1,0 +1,15 @@
+[package]
+name = "devimg-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for the Dev Image Pipeline"
+
+[[bin]]
+name = "devimg"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "=4.5.57", features = ["derive"] }
+devimg-core = { path = "../devimg-core" }

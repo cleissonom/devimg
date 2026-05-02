@@ -1,0 +1,299 @@
+use std::ffi::OsStr;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[test]
+fn help_and_usage_exit_codes_are_stable() {
+    assert_code(run(["--help"]), 0);
+    assert_code(run([] as [&str; 0]), 2);
+    assert_code(run(["unknown"]), 2);
+}
+
+#[test]
+fn missing_config_exits_2() {
+    let project = temp_project("missing_config");
+    let missing_config = path_arg(project.join("missing.toml"));
+    let output = run(["optimize", "--config", missing_config.as_str()]);
+    assert_code(output, 2);
+    cleanup(&project);
+}
+
+#[test]
+fn dry_run_writes_nothing() {
+    let project = fixture_project("dry_run", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    let output = run(["optimize", "--config", config.as_str(), "--dry-run"]);
+
+    assert_code(output, 0);
+    assert!(!project.join("public/images/devimg-manifest.json").exists());
+    assert!(!project.join("devimg-report.md").exists());
+    assert!(!project.join("public/images/generated").exists());
+    cleanup(&project);
+}
+
+#[test]
+fn optimize_and_check_success() {
+    let project = fixture_project("success", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    assert!(project
+        .join("public/images/generated/sample.project-card.64.webp")
+        .exists());
+    assert!(project.join("public/images/devimg-manifest.json").exists());
+    assert!(project.join("devimg-report.md").exists());
+
+    assert_code(run(["check", "--config", config.as_str()]), 0);
+    cleanup(&project);
+}
+
+#[test]
+fn check_fails_with_exit_3_when_output_is_deleted() {
+    let project = fixture_project("deleted_output", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    fs::remove_file(project.join("public/images/generated/sample.project-card.64.webp"))
+        .expect("remove output");
+
+    assert_code(run(["check", "--config", config.as_str()]), 3);
+    cleanup(&project);
+}
+
+#[test]
+fn unsafe_overwrite_exits_4_unless_explicitly_allowed() {
+    let project = fixture_project("unsafe_overwrite", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    let output_path = project.join("public/images/generated/sample.project-card.64.webp");
+    fs::create_dir_all(output_path.parent().expect("output parent")).expect("create output parent");
+    fs::write(&output_path, b"unmanaged").expect("write unmanaged output");
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 4);
+
+    assert_code(
+        run(["optimize", "--config", config.as_str(), "--allow-overwrite"]),
+        0,
+    );
+    cleanup(&project);
+}
+
+#[test]
+fn check_budget_failure_exits_3() {
+    let project =
+        fixture_project_with_budget("budget_failure", "sample.png", r#"max_total_bytes = "1b""#);
+    let config = path_arg(project.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    assert_code(run(["check", "--config", config.as_str()]), 3);
+    cleanup(&project);
+}
+
+#[test]
+fn check_config_change_exits_3_for_stale_outputs() {
+    let project = fixture_project("stale_config", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    write_project_config(&project, 32, "", r#"max_total_bytes = "5mb""#);
+
+    let output = run(["check", "--config", config.as_str()]);
+    assert_status(&output, 3);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("outdated_config"));
+    assert!(stderr.contains("stale"));
+    cleanup(&project);
+}
+
+#[test]
+fn report_manifest_errors_use_stable_exit_codes() {
+    let project = temp_project("report_errors");
+    let missing = path_arg(project.join("missing-manifest.json"));
+    assert_code(run(["report", "--manifest", missing.as_str()]), 1);
+
+    let malformed = project.join("bad-manifest.json");
+    fs::write(&malformed, "{").expect("write malformed manifest");
+    let malformed = path_arg(malformed);
+    assert_code(run(["report", "--manifest", malformed.as_str()]), 2);
+    cleanup(&project);
+}
+
+#[test]
+fn inspect_exit_codes_and_multiple_files_are_stable() {
+    let sample = path_arg(fixture_image());
+    let card = path_arg(repo_root().join("examples/portfolio/assets/images/card.png"));
+
+    let single = run(["inspect", sample.as_str()]);
+    assert_status(&single, 0);
+    let stdout = String::from_utf8_lossy(&single.stdout);
+    assert!(stdout.contains("dimensions: 640x360"));
+    assert!(stdout.contains("hash: blake3:"));
+
+    let multiple = run(["inspect", sample.as_str(), card.as_str()]);
+    assert_status(&multiple, 0);
+    let stdout = String::from_utf8_lossy(&multiple.stdout);
+    assert!(stdout.contains("fixtures/images/sample.png:"));
+    assert!(stdout.contains("examples/portfolio/assets/images/card.png:"));
+
+    assert_code(run(["inspect"]), 2);
+
+    let missing = path_arg(repo_root().join("fixtures/images/missing.png"));
+    assert_code(run(["inspect", missing.as_str()]), 1);
+}
+
+#[test]
+fn check_fail_on_warning_turns_warning_into_exit_3() {
+    let project = fixture_project_with_project_settings(
+        "fail_on_warning",
+        "sample.png",
+        "strip_metadata = false",
+        r#"max_total_bytes = "5mb""#,
+    );
+    let config = path_arg(project.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    assert_code(run(["check", "--config", config.as_str()]), 0);
+    assert_code(
+        run(["check", "--config", config.as_str(), "--fail-on-warning"]),
+        3,
+    );
+    cleanup(&project);
+}
+
+#[test]
+fn init_stdout_refusal_and_force_are_stable() {
+    let project = temp_project("init");
+    let config_path = project.join("nested/devimg.toml");
+    let config = path_arg(config_path.clone());
+
+    let stdout = run(["init", "--config", config.as_str(), "--stdout"]);
+    assert_status(&stdout, 0);
+    assert!(String::from_utf8_lossy(&stdout.stdout).contains("[project]"));
+    assert!(!config_path.exists());
+
+    assert_code(run(["init", "--config", config.as_str()]), 0);
+    assert!(config_path.exists());
+    assert_code(run(["init", "--config", config.as_str()]), 4);
+    assert_code(run(["init", "--config", config.as_str(), "--force"]), 0);
+    cleanup(&project);
+}
+
+fn run<I, S>(args: I) -> Output
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args(args)
+        .output()
+        .expect("devimg runs")
+}
+
+fn assert_code(output: Output, expected: i32) {
+    assert_status(&output, expected);
+}
+
+fn assert_status(output: &Output, expected: i32) {
+    let actual = output.status.code();
+    assert_eq!(
+        actual,
+        Some(expected),
+        "expected exit {expected}, got {actual:?}\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn fixture_project(label: &str, source_name: &str) -> PathBuf {
+    fixture_project_with_budget(label, source_name, r#"max_total_bytes = "5mb""#)
+}
+
+fn fixture_project_with_budget(label: &str, source_name: &str, budget_line: &str) -> PathBuf {
+    fixture_project_with_project_settings(label, source_name, "", budget_line)
+}
+
+fn fixture_project_with_project_settings(
+    label: &str,
+    source_name: &str,
+    project_settings: &str,
+    budget_line: &str,
+) -> PathBuf {
+    let project = temp_project(label);
+    let source_path = project.join("assets/images").join(source_name);
+    fs::create_dir_all(source_path.parent().expect("source parent")).expect("create source parent");
+    fs::copy(fixture_image(), &source_path).expect("copy fixture image");
+    write_project_config(&project, 64, project_settings, budget_line);
+    project
+}
+
+fn config_text_with_width(width: u32, project_settings: &str, budget_line: &str) -> String {
+    format!(
+        r#"[project]
+root = "."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+{project_settings}
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png"]
+
+[[preset]]
+name = "project-card"
+widths = [{width}]
+formats = ["webp"]
+quality = 82
+fit = "cover"
+aspect_ratio = "16:9"
+
+[budgets]
+{budget_line}
+"#
+    )
+}
+
+fn write_project_config(project: &Path, width: u32, project_settings: &str, budget_line: &str) {
+    fs::write(
+        project.join("devimg.toml"),
+        config_text_with_width(width, project_settings, budget_line),
+    )
+    .expect("write config");
+}
+
+fn fixture_image() -> PathBuf {
+    repo_root().join("fixtures/images/sample.png")
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates dir")
+        .parent()
+        .expect("repo root")
+        .to_path_buf()
+}
+
+fn temp_project(label: &str) -> PathBuf {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let path =
+        std::env::temp_dir().join(format!("devimg_cli_{label}_{}_{}", std::process::id(), now));
+    fs::create_dir_all(&path).expect("create temp project");
+    path
+}
+
+fn path_arg(path: PathBuf) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+fn cleanup(path: &Path) {
+    if path.exists() {
+        fs::remove_dir_all(path).expect("cleanup temp project");
+    }
+}

@@ -1,0 +1,106 @@
+name: Dev Image Pipeline
+description: Run devimg check or optimize in GitHub Actions
+author: cleissonom
+
+inputs:
+  config:
+    description: Path to devimg.toml
+    required: false
+    default: devimg.toml
+  mode:
+    description: "Command to run: check or optimize"
+    required: false
+    default: check
+  working-directory:
+    description: Directory to run devimg from
+    required: false
+    default: .
+  fail-on-warning:
+    description: Treat warnings as CI failures for check mode
+    required: false
+    default: "false"
+  binary-path:
+    description: Optional path to a preinstalled devimg binary
+    required: false
+  version:
+    description: Release version to download when no binary is available
+    required: false
+    default: v0.1.0
+  report-path:
+    description: Markdown report path to append to the job summary
+    required: false
+    default: devimg-report.md
+  manifest-path:
+    description: Expected manifest path
+    required: false
+    default: public/images/devimg-manifest.json
+
+outputs:
+  status:
+    description: pass or fail
+    value: ${{ steps.run.outputs.status }}
+  report-path:
+    description: Markdown report path
+    value: ${{ steps.run.outputs.report-path }}
+  manifest-path:
+    description: Manifest path
+    value: ${{ steps.run.outputs.manifest-path }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ -n "${{ inputs.binary-path }}" ]]; then
+          echo "bin=${{ inputs.binary-path }}" >> "$GITHUB_OUTPUT"
+        elif command -v devimg >/dev/null 2>&1; then
+          echo "bin=$(command -v devimg)" >> "$GITHUB_OUTPUT"
+        else
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m)"
+          case "$arch" in
+            x86_64|amd64) arch="x86_64" ;;
+            arm64|aarch64) arch="aarch64" ;;
+            *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
+          esac
+          url="https://github.com/cleissonom/devimg/releases/download/${{ inputs.version }}/devimg-${os}-${arch}.tar.gz"
+          mkdir -p "$RUNNER_TEMP/devimg"
+          curl -fsSL "$url" -o "$RUNNER_TEMP/devimg/devimg.tar.gz"
+          tar -xzf "$RUNNER_TEMP/devimg/devimg.tar.gz" -C "$RUNNER_TEMP/devimg"
+          chmod +x "$RUNNER_TEMP/devimg/devimg"
+          echo "bin=$RUNNER_TEMP/devimg/devimg" >> "$GITHUB_OUTPUT"
+        fi
+    - id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set +e
+        bin="${{ steps.resolve.outputs.bin }}"
+        mode="${{ inputs.mode }}"
+        config="${{ inputs.config }}"
+        status="pass"
+        if [[ "$mode" == "check" ]]; then
+          args=(check --config "$config")
+          if [[ "${{ inputs.fail-on-warning }}" == "true" ]]; then
+            args+=(--fail-on-warning)
+          fi
+        elif [[ "$mode" == "optimize" ]]; then
+          args=(optimize --config "$config")
+        else
+          echo "Unsupported mode: $mode" >&2
+          exit 2
+        fi
+        "$bin" "${args[@]}"
+        code="$?"
+        if [[ "$code" != "0" ]]; then
+          status="fail"
+        fi
+        echo "status=$status" >> "$GITHUB_OUTPUT"
+        echo "report-path=${{ inputs.report-path }}" >> "$GITHUB_OUTPUT"
+        echo "manifest-path=${{ inputs.manifest-path }}" >> "$GITHUB_OUTPUT"
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && -f "${{ inputs.report-path }}" ]]; then
+          cat "${{ inputs.report-path }}" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        exit "$code"

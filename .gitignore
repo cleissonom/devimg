@@ -1,0 +1,8 @@
+/target/
+ai_tasks/
+next-steps.md
+devimg.md
+**/*.tmp-*
+examples/portfolio/public/images/generated/
+examples/portfolio/public/images/devimg-manifest.json
+examples/portfolio/devimg-report.md

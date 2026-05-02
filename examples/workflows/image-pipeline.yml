@@ -1,0 +1,19 @@
+name: Image Pipeline
+
+on:
+  pull_request:
+    paths:
+      - "assets/images/**"
+      - "devimg.toml"
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cleissonom/devimg/action@v1
+        with:
+          config: devimg.toml
+          mode: check

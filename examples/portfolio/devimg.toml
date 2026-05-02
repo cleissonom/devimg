@@ -1,0 +1,55 @@
+[project]
+root = "."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+overwrite = false
+strip_metadata = true
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.webp"]
+exclude = ["**/generated/**"]
+
+[[preset]]
+name = "project-card"
+widths = [320, 640]
+formats = ["webp", "jpeg"]
+quality = 82
+fit = "cover"
+aspect_ratio = "16:9"
+allow_upscale = false
+
+[[preset]]
+name = "open-graph"
+widths = [640]
+formats = ["png", "webp"]
+quality = 90
+fit = "cover"
+aspect_ratio = "1200:630"
+allow_upscale = false
+
+[[preset]]
+name = "avatar"
+widths = [128, 256]
+formats = ["webp", "jpeg"]
+quality = 86
+fit = "cover"
+aspect_ratio = "1:1"
+allow_upscale = false
+
+[[preset]]
+name = "hero"
+widths = [640]
+formats = ["webp", "jpeg"]
+quality = 84
+fit = "cover"
+aspect_ratio = "21:9"
+allow_upscale = false
+
+[budgets]
+max_total_bytes = "5mb"
+max_file_bytes = "900kb"
+fail_on_regression = true
+

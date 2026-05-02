@@ -1,0 +1,17 @@
+[package]
+name = "devimg-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core image pipeline logic for devimg"
+
+[dependencies]
+blake3 = "=1.8.2"
+globset = "=0.4.16"
+image = { version = "0.24.9", default-features = false, features = ["png", "jpeg", "webp"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+thiserror = "2.0.18"
+toml = "=0.8.23"
+walkdir = "2.5.0"
