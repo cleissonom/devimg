@@ -1,5 +1,6 @@
 mod budget;
 mod check;
+mod compare;
 mod config;
 mod doctor;
 mod hash;
@@ -10,6 +11,10 @@ mod report;
 mod scan;
 mod transform;
 
+pub use compare::{
+    compare_manifests, manifest_compare_to_json, ManifestCompare, ManifestCompareChange,
+    ManifestCompareOptions, ManifestCompareOutput, ManifestCompareSummary,
+};
 pub use config::{
     load_config, AspectRatio, BudgetConfig, Config, CropPosition, FitMode, FormatKind,
     PresetConfig, PresetOverrideConfig, ProjectConfig, SourceConfig,
@@ -28,7 +33,9 @@ pub use pipeline::{
     build_plan, check, inspect_image, optimize, scan_sources, CheckIssue, CheckOptions,
     CheckResult, ImageInspection, Operation, OptimizeOptions, OptimizeResult, Plan, SourceImage,
 };
-pub use report::{render_doctor_report, render_manifest_report, render_run_report};
+pub use report::{
+    render_doctor_report, render_manifest_compare_report, render_manifest_report, render_run_report,
+};
 
 use std::path::PathBuf;
 

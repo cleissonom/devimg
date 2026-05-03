@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["--help"]), 0);
     assert_code(run(["doctor", "--help"]), 0);
+    assert_code(run(["compare", "--help"]), 0);
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -468,6 +469,139 @@ fn manifest_export_outputs_app_mapping() {
 }
 
 #[test]
+fn compare_reports_manifest_diffs_for_people_and_json() {
+    let project = temp_project("compare");
+    let base = project.join("base-manifest.json");
+    let head = project.join("head-manifest.json");
+    fs::write(
+        &base,
+        compare_manifest_json(
+            "unix:1",
+            "blake3:base",
+            &[
+                compare_output_json((
+                    "assets/card.png",
+                    "project-card",
+                    640,
+                    360,
+                    "webp",
+                    100,
+                    "same",
+                    "public/images/generated/card.project-card.640.webp",
+                )),
+                compare_output_json((
+                    "assets/card.png",
+                    "project-card",
+                    960,
+                    540,
+                    "webp",
+                    200,
+                    "old",
+                    "public/images/generated/card.project-card.960.webp",
+                )),
+                compare_output_json((
+                    "assets/card.png",
+                    "project-card",
+                    1280,
+                    720,
+                    "webp",
+                    300,
+                    "removed",
+                    "public/images/generated/card.project-card.1280.webp",
+                )),
+            ],
+        ),
+    )
+    .expect("write base manifest");
+    fs::write(
+        &head,
+        compare_manifest_json(
+            "unix:2",
+            "blake3:head",
+            &[
+                compare_output_json((
+                    "assets/card.png",
+                    "project-card",
+                    640,
+                    360,
+                    "webp",
+                    100,
+                    "same",
+                    "public/images/generated/card.project-card.640.webp",
+                )),
+                compare_output_json((
+                    "assets/card.png",
+                    "project-card",
+                    960,
+                    540,
+                    "webp",
+                    260,
+                    "new",
+                    "public/images/generated/card.project-card.960.newhash.webp",
+                )),
+                compare_output_json((
+                    "assets/avatar.png",
+                    "avatar",
+                    256,
+                    256,
+                    "jpeg",
+                    50,
+                    "added",
+                    "public/images/generated/avatar.avatar.256.jpeg",
+                )),
+            ],
+        ),
+    )
+    .expect("write head manifest");
+    let base_arg = path_arg(base);
+    let head_arg = path_arg(head);
+
+    let human = run([
+        "compare",
+        "--base",
+        base_arg.as_str(),
+        "--head",
+        head_arg.as_str(),
+    ]);
+    assert_status(&human, 0);
+    let stdout = String::from_utf8_lossy(&human.stdout);
+    assert!(stdout.contains("# Dev Image Pipeline Compare Report"));
+    assert!(stdout.contains("- Variants: `3` -> `3` (`0`)"));
+    assert!(stdout.contains("- Output bytes: `600` -> `410` (`-190`)"));
+    assert!(stdout.contains("- Added outputs: `1`"));
+    assert!(stdout.contains("- Removed outputs: `1`"));
+    assert!(stdout.contains("- Changed outputs: `1`"));
+    assert!(stdout.contains("- Unchanged outputs: `1`"));
+    assert!(stdout.contains("card.project-card.960.webp` -> `public/images/generated/card.project-card.960.newhash.webp"));
+    assert!(stdout.contains("## Top Byte Contributors"));
+
+    let json = run([
+        "compare",
+        "--base",
+        base_arg.as_str(),
+        "--head",
+        head_arg.as_str(),
+        "--json",
+        "--top",
+        "1",
+    ]);
+    assert_status(&json, 0);
+    let document: serde_json::Value =
+        serde_json::from_slice(&json.stdout).expect("compare JSON parses");
+    assert_eq!(document["summary"]["output_bytes_delta"], -190);
+    assert_eq!(document["summary"]["added_count"], 1);
+    assert_eq!(document["summary"]["removed_count"], 1);
+    assert_eq!(document["summary"]["changed_count"], 1);
+    assert_eq!(document["summary"]["unchanged_count"], 1);
+    let top = document["top_byte_contributors"]
+        .as_array()
+        .expect("top contributors array");
+    assert_eq!(top.len(), 1);
+    assert_eq!(top[0]["bytes"], 260);
+    cleanup(&project);
+}
+
+#[test]
 fn inspect_exit_codes_and_multiple_files_are_stable() {
     let sample = path_arg(fixture_image());
     let card = path_arg(repo_root().join("examples/portfolio/assets/images/card.png"));
@@ -517,13 +651,233 @@ fn init_stdout_refusal_and_force_are_stable() {
 
     let stdout = run(["init", "--config", config.as_str(), "--stdout"]);
     assert_status(&stdout, 0);
-    assert!(String::from_utf8_lossy(&stdout.stdout).contains("[project]"));
+    let default_config = String::from_utf8_lossy(&stdout.stdout);
+    assert!(default_config.contains("[project]"));
+    assert!(default_config.contains("name = \"portfolio\""));
+    assert!(default_config.contains("input = \"assets/images\""));
     assert!(!config_path.exists());
 
     assert_code(run(["init", "--config", config.as_str()]), 0);
     assert!(config_path.exists());
     assert_code(run(["init", "--config", config.as_str()]), 4);
     assert_code(run(["init", "--config", config.as_str(), "--force"]), 0);
+    cleanup(&project);
+}
+
+#[test]
+fn init_profiles_emit_framework_paths_and_parse() {
+    let cases = [
+        ("next", "next", "public/images/source"),
+        ("astro", "astro", "src/assets/images"),
+        ("vite", "vite", "src/assets/images"),
+    ];
+
+    for (profile, source_name, input_dir) in cases {
+        let project = temp_project(&format!("init_profile_{profile}"));
+        let config_path = project.join("devimg.toml");
+        let config = path_arg(config_path.clone());
+
+        let stdout = run([
+            "init",
+            "--profile",
+            profile,
+            "--config",
+            config.as_str(),
+            "--stdout",
+        ]);
+        assert_status(&stdout, 0);
+        let rendered = String::from_utf8_lossy(&stdout.stdout);
+        assert!(rendered.contains(&format!("name = \"{source_name}\"")));
+        assert!(rendered.contains(&format!("input = \"{input_dir}\"")));
+        assert!(rendered.contains("output = \"public/images/generated\""));
+        assert!(!config_path.exists());
+
+        assert_code(
+            run(["init", "--profile", profile, "--config", config.as_str()]),
+            0,
+        );
+        let source_path = project.join(input_dir).join("sample.png");
+        fs::create_dir_all(source_path.parent().expect("source parent"))
+            .expect("create profile source dir");
+        fs::copy(fixture_image(), &source_path).expect("copy fixture image");
+
+        assert_code(
+            run(["optimize", "--config", config.as_str(), "--dry-run"]),
+            0,
+        );
+        cleanup(&project);
+    }
+}
+
+#[test]
+fn init_profile_refusal_force_and_unknown_profile_are_stable() {
+    let project = temp_project("init_profile_write");
+    let config_path = project.join("nested/devimg.toml");
+    let config = path_arg(config_path.clone());
+
+    assert_code(
+        run(["init", "--profile", "next", "--config", config.as_str()]),
+        0,
+    );
+    assert!(config_path.exists());
+    let written = fs::read_to_string(&config_path).expect("profile config reads");
+    assert!(written.contains("input = \"public/images/source\""));
+
+    assert_code(
+        run(["init", "--profile", "next", "--config", config.as_str()]),
+        4,
+    );
+    assert_code(
+        run([
+            "init",
+            "--profile",
+            "next",
+            "--config",
+            config.as_str(),
+            "--force",
+        ]),
+        0,
+    );
+
+    let invalid = run(["init", "--profile", "rails", "--stdout"]);
+    assert_status(&invalid, 2);
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("invalid value"));
+    cleanup(&project);
+}
+
+#[test]
+fn agent_init_creates_codex_claude_and_both_targets_safely() {
+    let codex_project = temp_project("agent_codex");
+    let codex_output = path_arg(codex_project.clone());
+    assert_code(
+        run([
+            "agent",
+            "init",
+            "--target",
+            "codex",
+            "--output-dir",
+            codex_output.as_str(),
+        ]),
+        0,
+    );
+    let agents = codex_project.join("AGENTS.md");
+    assert!(agents.exists());
+    let agents_text = fs::read_to_string(&agents).expect("AGENTS.md reads");
+    assert!(agents_text.contains("devimg doctor --config devimg.toml"));
+    assert!(agents_text.contains("devimg optimize --config devimg.toml --allow-overwrite"));
+    assert!(agents_text.contains("devimg manifest export"));
+    assert!(agents_text.contains("devimg check --config devimg.toml"));
+    assert!(agents_text.contains("Do not edit generated"));
+    cleanup(&codex_project);
+
+    let claude_project = temp_project("agent_claude");
+    let claude_output = path_arg(claude_project.clone());
+    assert_code(
+        run([
+            "agent",
+            "init",
+            "--target",
+            "claude",
+            "--output-dir",
+            claude_output.as_str(),
+        ]),
+        0,
+    );
+    assert!(claude_project.join("CLAUDE.md").exists());
+    assert!(claude_project
+        .join(".claude/commands/devimg-doctor.md")
+        .exists());
+    cleanup(&claude_project);
+
+    let both_project = temp_project("agent_both");
+    let both_output = path_arg(both_project.clone());
+    assert_code(
+        run([
+            "agent",
+            "init",
+            "--target",
+            "both",
+            "--output-dir",
+            both_output.as_str(),
+        ]),
+        0,
+    );
+    assert!(both_project.join("AGENTS.md").exists());
+    assert!(both_project.join("CLAUDE.md").exists());
+    assert!(both_project
+        .join(".claude/commands/devimg-doctor.md")
+        .exists());
+    cleanup(&both_project);
+}
+
+#[test]
+fn agent_init_refuses_existing_files_unless_forced() {
+    let project = temp_project("agent_existing");
+    fs::write(project.join("AGENTS.md"), "existing\n").expect("write existing agent file");
+    let output_dir = path_arg(project.clone());
+
+    let refused = run([
+        "agent",
+        "init",
+        "--target",
+        "both",
+        "--output-dir",
+        output_dir.as_str(),
+    ]);
+    assert_status(&refused, 4);
+    assert_eq!(
+        fs::read_to_string(project.join("AGENTS.md")).expect("AGENTS reads"),
+        "existing\n"
+    );
+    assert!(!project.join("CLAUDE.md").exists());
+
+    assert_code(
+        run([
+            "agent",
+            "init",
+            "--target",
+            "both",
+            "--output-dir",
+            output_dir.as_str(),
+            "--force",
+        ]),
+        0,
+    );
+    assert!(fs::read_to_string(project.join("AGENTS.md"))
+        .expect("AGENTS reads")
+        .contains("DevImg Agent Instructions"));
+    assert!(project.join("CLAUDE.md").exists());
+    cleanup(&project);
+}
+
+#[test]
+fn agent_init_stdout_and_invalid_target_are_stable() {
+    let project = temp_project("agent_stdout");
+    let output_dir = path_arg(project.clone());
+
+    let output = run([
+        "agent",
+        "init",
+        "--target",
+        "both",
+        "--output-dir",
+        output_dir.as_str(),
+        "--config",
+        "config/devimg.toml",
+        "--stdout",
+    ]);
+    assert_status(&output, 0);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("# AGENTS.md"));
+    assert!(stdout.contains("# CLAUDE.md"));
+    assert!(stdout.contains("# .claude/commands/devimg-doctor.md"));
+    assert!(stdout.contains("devimg doctor --config config/devimg.toml"));
+    assert!(!project.join("AGENTS.md").exists());
+    assert!(!project.join("CLAUDE.md").exists());
+
+    let invalid = run(["agent", "init", "--target", "cursor", "--stdout"]);
+    assert_status(&invalid, 2);
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("invalid value"));
     cleanup(&project);
 }
 
@@ -646,6 +1000,44 @@ fn temp_project(label: &str) -> PathBuf {
 
 fn path_arg(path: PathBuf) -> String {
     path.to_string_lossy().into_owned()
+}
+
+fn compare_manifest_json(generated_at: &str, config_hash: &str, outputs: &[String]) -> String {
+    format!(
+        r#"{{
+  "version": 1,
+  "generated_at": "{generated_at}",
+  "config_path": "devimg.toml",
+  "config_hash": "{config_hash}",
+  "outputs": [
+    {}
+  ]
+}}
+"#,
+        outputs.join(",\n    ")
+    )
+}
+
+fn compare_output_json(output: (&str, &str, u32, u32, &str, u64, &str, &str)) -> String {
+    let (source_path, preset, width, height, format, bytes, hash_suffix, output_path) = output;
+    format!(
+        r#"{{
+      "source_path": "{source_path}",
+      "source_hash": "blake3:source-{hash_suffix}",
+      "source_width": 1600,
+      "source_height": 900,
+      "source_bytes": 1000,
+      "output_path": "{output_path}",
+      "preset": "{preset}",
+      "fit": "cover",
+      "width": {width},
+      "height": {height},
+      "format": "{format}",
+      "bytes": {bytes},
+      "hash": "blake3:{hash_suffix}",
+      "operation_hash": "blake3:operation-{hash_suffix}"
+    }}"#
+    )
 }
 
 fn cleanup(path: &Path) {

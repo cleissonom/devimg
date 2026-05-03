@@ -2,6 +2,16 @@
 
 `devimg.toml` is standard TOML parsed through serde. Unknown keys inside known sections are ignored for forward compatibility; unknown top-level sections are rejected.
 
+## Init Profiles
+
+`devimg init` writes the generic starter config. `devimg init --profile next`, `devimg init --profile astro`, and `devimg init --profile vite` write the same config shape with framework-friendly source paths.
+
+Profiles only choose starter paths and source names. They do not add new config syntax or framework-specific runtime behavior.
+
+- `next`: `public/images/source` -> `public/images/generated`
+- `astro`: `src/assets/images` -> `public/images/generated`
+- `vite`: `src/assets/images` -> `public/images/generated`
+
 ## Project
 
 - `root`: project root, resolved relative to the config file.

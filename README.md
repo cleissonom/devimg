@@ -8,6 +8,8 @@ The MVP has no web UI and no remote storage. The CLI is the source of truth; the
 
 ```bash
 cargo run -p devimg-cli -- init --stdout > devimg.toml
+# Or choose framework-friendly starter paths:
+cargo run -p devimg-cli -- init --profile next --stdout > devimg.toml
 cargo run -p devimg-cli -- doctor --config devimg.toml
 cargo run -p devimg-cli -- optimize --config devimg.toml
 cargo run -p devimg-cli -- check --config devimg.toml
@@ -19,9 +21,11 @@ Useful commands:
 ```bash
 cargo run -p devimg-cli -- doctor --config examples/portfolio/devimg.toml
 cargo run -p devimg-cli -- doctor --config examples/portfolio/devimg.toml --json
+cargo run -p devimg-cli -- agent init --target both --stdout
 cargo run -p devimg-cli -- optimize --config examples/portfolio/devimg.toml --dry-run
 cargo run -p devimg-cli -- report --manifest examples/portfolio/public/images/devimg-manifest.json
 cargo run -p devimg-cli -- manifest export --manifest examples/portfolio/public/images/devimg-manifest.json
+cargo run -p devimg-cli -- compare --base old-devimg-manifest.json --head public/images/devimg-manifest.json
 cargo run -p devimg-cli -- inspect fixtures/images/sample.png
 ```
 
@@ -37,7 +41,7 @@ devimg doctor --config devimg.toml --export-output lib/devimg.generated.ts --exp
 
 ## Config
 
-Copy `devimg.example.toml` or run `devimg init`.
+Copy `devimg.example.toml` or run `devimg init`. Use `devimg init --profile next`, `--profile astro`, or `--profile vite` to start with common framework paths while keeping the same config format.
 
 ```toml
 [project]
@@ -122,6 +126,25 @@ devimg doctor \
   --url-prefix /
 ```
 
+## Manifest Compare
+
+Use `compare` when reviewing image PRs or checking why a branch changed generated assets. Keep a copy of the old manifest, regenerate images on the branch, then compare the two manifests:
+
+```bash
+cp public/images/devimg-manifest.json /tmp/devimg-base-manifest.json
+devimg optimize --config devimg.toml --allow-overwrite
+devimg compare --base /tmp/devimg-base-manifest.json --head public/images/devimg-manifest.json
+```
+
+The human report shows variant count delta, output byte delta, added outputs, removed outputs, changed outputs, unchanged outputs, and the largest head-manifest byte contributors. Use JSON output for CI or AI agents:
+
+```bash
+devimg compare \
+  --base /tmp/devimg-base-manifest.json \
+  --head public/images/devimg-manifest.json \
+  --json
+```
+
 For `fit = "cover"`, `crop` controls which part of the resized image is preserved when the aspect ratio requires cropping. It defaults to `center`. Use anchors such as `top`, `bottom`, `left`, `right`, `top-left`, or a normalized focal point:
 
 ```toml
@@ -158,6 +181,17 @@ Exit codes are stable for CI:
 Codex, Claude Code, and similar tools should run `devimg doctor --config devimg.toml` before editing image sources, config, manifests, generated variants, or app helper files. After changes, run the local loop above and commit the generated variants, manifest, report, and checked-in helper files together.
 
 Do not edit generated files by hand. If agent instruction files such as `AGENTS.md`, `CLAUDE.md`, or `.claude/skills/**` already exist, do not overwrite them; add project-specific guidance only through an explicit reviewed change.
+
+Use `devimg agent init` to create safe project instructions when a project does not already have them:
+
+```bash
+devimg agent init --target codex
+devimg agent init --target claude
+devimg agent init --target both
+devimg agent init --target both --stdout
+```
+
+The generator refuses to overwrite existing files unless `--force` is passed. The repo also ships a reusable Codex skill at `skills/devimg-image-pipeline/`; copy that folder into `${CODEX_HOME:-~/.codex}/skills/` to make the workflow available as `$devimg-image-pipeline`.
 
 ## GitHub Action
 

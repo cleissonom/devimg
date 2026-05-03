@@ -1,3 +1,4 @@
+use crate::compare::{ManifestCompare, ManifestCompareChange, ManifestCompareOutput};
 use crate::doctor::DoctorReport;
 use crate::manifest::Manifest;
 use crate::pipeline::OptimizeResult;
@@ -64,6 +65,66 @@ pub fn render_manifest_report(manifest: &Manifest) -> String {
     out
 }
 
+pub fn render_manifest_compare_report(compare: &ManifestCompare) -> String {
+    let summary = &compare.summary;
+    let mut out = String::new();
+    out.push_str("# Dev Image Pipeline Compare Report\n\n");
+    out.push_str(&format!(
+        "- Base generated at: `{}`\n",
+        compare.base_generated_at
+    ));
+    out.push_str(&format!(
+        "- Head generated at: `{}`\n",
+        compare.head_generated_at
+    ));
+    out.push_str(&format!(
+        "- Base config hash: `{}`\n",
+        compare.base_config_hash
+    ));
+    out.push_str(&format!(
+        "- Head config hash: `{}`\n",
+        compare.head_config_hash
+    ));
+    out.push_str(&format!(
+        "- Variants: `{}` -> `{}` (`{}`)\n",
+        summary.base_variant_count,
+        summary.head_variant_count,
+        format_signed(summary.variant_count_delta)
+    ));
+    out.push_str(&format!(
+        "- Output bytes: `{}` -> `{}` (`{}`)\n",
+        summary.base_output_bytes,
+        summary.head_output_bytes,
+        format_signed(summary.output_bytes_delta)
+    ));
+    out.push_str(&format!("- Added outputs: `{}`\n", summary.added_count));
+    out.push_str(&format!("- Removed outputs: `{}`\n", summary.removed_count));
+    out.push_str(&format!("- Changed outputs: `{}`\n", summary.changed_count));
+    out.push_str(&format!(
+        "- Unchanged outputs: `{}`\n",
+        summary.unchanged_count
+    ));
+
+    out.push_str("\n## Added Outputs\n\n");
+    push_compare_outputs(&mut out, &compare.added, "No added outputs.");
+
+    out.push_str("\n## Removed Outputs\n\n");
+    push_compare_outputs(&mut out, &compare.removed, "No removed outputs.");
+
+    out.push_str("\n## Changed Outputs\n\n");
+    if compare.changed.is_empty() {
+        out.push_str("No changed outputs.\n");
+    } else {
+        for change in &compare.changed {
+            push_changed_output(&mut out, change);
+        }
+    }
+
+    out.push_str("\n## Top Byte Contributors\n\n");
+    push_compare_outputs(&mut out, &compare.top_byte_contributors, "No head outputs.");
+    out
+}
+
 pub fn render_doctor_report(report: &DoctorReport) -> String {
     let mut out = String::new();
     out.push_str("DevImg Doctor\n\n");
@@ -126,4 +187,63 @@ pub fn render_doctor_report(report: &DoctorReport) -> String {
 
     out.push_str(&format!("\nNext: {}\n", report.next_command));
     out
+}
+
+fn push_compare_outputs(out: &mut String, outputs: &[ManifestCompareOutput], empty: &str) {
+    if outputs.is_empty() {
+        out.push_str(empty);
+        out.push('\n');
+        return;
+    }
+
+    for output in outputs {
+        out.push_str(&format!(
+            "- `{}` (source: `{}`, preset: `{}`, fit: `{}`, {}x{} {}, {} bytes)\n",
+            output.output_path,
+            output.source_path,
+            output.preset,
+            output.fit,
+            output.width,
+            output.height,
+            output.format,
+            output.bytes
+        ));
+    }
+}
+
+fn push_changed_output(out: &mut String, change: &ManifestCompareChange) {
+    let path_change = if change.base_output_path == change.head_output_path {
+        format!("`{}`", change.head_output_path)
+    } else {
+        format!(
+            "`{}` -> `{}`",
+            change.base_output_path, change.head_output_path
+        )
+    };
+    let fit_change = if change.base_fit == change.head_fit {
+        format!("`{}`", change.head_fit)
+    } else {
+        format!("`{}` -> `{}`", change.base_fit, change.head_fit)
+    };
+    out.push_str(&format!(
+        "- `{}` preset `{}` {}x{} {}: bytes `{}` -> `{}` (`{}`), fit {}, output {}\n",
+        change.source_path,
+        change.preset,
+        change.width,
+        change.height,
+        change.format,
+        change.base_bytes,
+        change.head_bytes,
+        format_signed(change.byte_delta),
+        fit_change,
+        path_change
+    ));
+}
+
+fn format_signed(value: i64) -> String {
+    if value > 0 {
+        format!("+{value}")
+    } else {
+        value.to_string()
+    }
 }

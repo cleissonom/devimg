@@ -1,0 +1,4 @@
+interface:
+  display_name: "DevImg Image Pipeline"
+  short_description: "Run DevImg workflows safely"
+  default_prompt: "Use $devimg-image-pipeline to update generated image variants and manifests safely."
