@@ -18,7 +18,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.7
+      - uses: cleissonom/devimg/action@v0.1.8
         with:
           config: devimg.toml
           mode: check
@@ -42,6 +42,6 @@ Export inputs:
 - `strip-prefix`: optional path prefix stripped from exported image URLs.
 - `url-prefix`: optional URL prefix added to exported image URLs.
 
-The default `version` input is `v0.1.7`, which maps to release assets such as `devimg-linux-x86_64.tar.gz`.
+The default `version` input is `v0.1.8`, which maps to release assets such as `devimg-linux-x86_64.tar.gz`.
 
 The MVP does not post PR comments, commit generated image files, or rewrite manifest helper files.
