@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::budget::{budget_issues, budget_status};
-use crate::config::{project_relative, resolve_project_path_checked, Config};
+use crate::config::{project_relative, resolve_project_path_checked, Config, FormatKind};
 use crate::hash::hash_file;
 use crate::manifest::{Manifest, ManifestOutput};
 use crate::pipeline::{
@@ -108,21 +108,8 @@ pub fn check_with_options(config: &Config, options: CheckOptions) -> Result<Chec
         }
         let metadata =
             fs::metadata(&actual_path).map_err(|source| DevimgError::io(&actual_path, source))?;
-        match image::image_dimensions(&actual_path) {
-            Ok((width, height)) if width == operation.width && height == operation.height => {}
-            Ok((width, height)) => issues.push(CheckIssue {
-                kind: "stale".to_string(),
-                path: actual_project_path.clone(),
-                message: format!(
-                    "output dimensions are {}x{}, expected {}x{}",
-                    width, height, operation.width, operation.height
-                ),
-            }),
-            Err(source) => issues.push(CheckIssue {
-                kind: "invalid_output".to_string(),
-                path: actual_project_path.clone(),
-                message: source.to_string(),
-            }),
+        if let Some(issue) = validate_output_file(operation, &actual_path, &actual_project_path) {
+            issues.push(issue);
         }
         actual_outputs.push(ManifestOutput {
             source_path: operation.source.project_path.clone(),
@@ -171,6 +158,50 @@ pub fn check_with_options(config: &Config, options: CheckOptions) -> Result<Chec
         passed: result.issues.is_empty(),
         result,
     })
+}
+
+fn validate_output_file(
+    operation: &crate::pipeline::Operation,
+    actual_path: &PathBuf,
+    actual_project_path: &str,
+) -> Option<CheckIssue> {
+    if operation.format == FormatKind::Avif {
+        return validate_avif_container(actual_path)
+            .err()
+            .map(|message| CheckIssue {
+                kind: "invalid_output".to_string(),
+                path: actual_project_path.to_string(),
+                message,
+            });
+    }
+
+    match image::image_dimensions(actual_path) {
+        Ok((width, height)) if width == operation.width && height == operation.height => None,
+        Ok((width, height)) => Some(CheckIssue {
+            kind: "stale".to_string(),
+            path: actual_project_path.to_string(),
+            message: format!(
+                "output dimensions are {}x{}, expected {}x{}",
+                width, height, operation.width, operation.height
+            ),
+        }),
+        Err(source) => Some(CheckIssue {
+            kind: "invalid_output".to_string(),
+            path: actual_project_path.to_string(),
+            message: source.to_string(),
+        }),
+    }
+}
+
+fn validate_avif_container(path: &PathBuf) -> std::result::Result<(), String> {
+    let bytes = fs::read(path).map_err(|source| source.to_string())?;
+    if bytes.len() <= 16 || &bytes[4..8] != b"ftyp" {
+        return Err("AVIF output is missing the ftyp box".to_string());
+    }
+    if !bytes.windows(4).any(|window| window == b"avif") {
+        return Err("AVIF output is missing the avif brand".to_string());
+    }
+    Ok(())
 }
 
 fn stable_manifest_output<'a>(

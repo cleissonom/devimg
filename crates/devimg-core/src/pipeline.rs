@@ -218,6 +218,24 @@ mod tests {
     }
 
     #[test]
+    fn optimize_generates_opt_in_avif_outputs() {
+        let project = temp_project("avif_output");
+        write_image(&project.join("assets/images/card.png"), 800, 450);
+        write_avif_config(&project);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        let result = optimize(&config, OptimizeOptions::default()).expect("optimize succeeds");
+        let output = project.join("public/images/generated/card.project-card.320.avif");
+        let output_bytes = fs::read(&output).expect("avif output exists");
+
+        assert_eq!(result.manifest.outputs.len(), 1);
+        assert_eq!(result.manifest.outputs[0].format, "avif");
+        assert_avif_container(&output_bytes);
+        assert!(check(&config).expect("check runs").passed);
+        cleanup(&project);
+    }
+
+    #[test]
     fn dry_run_does_not_write_outputs() {
         let project = temp_project("dry_run");
         write_image(&project.join("assets/images/card.png"), 800, 450);
@@ -822,6 +840,35 @@ aspect_ratio = "16:9"
         .expect("config writes");
     }
 
+    fn write_avif_config(project: &Path) {
+        fs::write(
+            project.join("devimg.toml"),
+            r#"[project]
+root = "."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png"]
+
+[[preset]]
+name = "project-card"
+widths = [320]
+formats = ["avif"]
+quality = 72
+fit = "cover"
+aspect_ratio = "16:9"
+
+[budgets]
+max_total_bytes = "5mb"
+"#,
+        )
+        .expect("config writes");
+    }
+
     fn write_overlap_config(project: &Path) {
         fs::write(
             project.join("devimg.toml"),
@@ -859,6 +906,15 @@ aspect_ratio = "16:9"
         DynamicImage::ImageRgba8(image)
             .save_with_format(path, ImageFormat::Png)
             .expect("image writes");
+    }
+
+    fn assert_avif_container(bytes: &[u8]) {
+        assert!(bytes.len() > 16, "AVIF output should not be empty");
+        assert_eq!(&bytes[4..8], b"ftyp");
+        assert!(
+            bytes.windows(4).any(|window| window == b"avif"),
+            "AVIF output should contain the avif brand"
+        );
     }
 
     fn temp_project(label: &str) -> PathBuf {

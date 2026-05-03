@@ -186,6 +186,7 @@ fn operation_hash(
 fn encoder_hash_component(format: FormatKind) -> Option<&'static str> {
     match format {
         FormatKind::Webp => Some("encoder:webp-libwebp-lossy-v1"),
+        FormatKind::Avif => Some("encoder:ravif-0.13-speed8-v1"),
         FormatKind::Png | FormatKind::Jpeg => None,
     }
 }

@@ -1,6 +1,6 @@
 # Dev Image Pipeline
 
-`devimg` is a Rust CLI and GitHub Action for deterministic web image variants. It scans configured image folders, generates responsive PNG/JPEG/WebP outputs, writes a JSON manifest and Markdown report, and lets CI fail when generated images are missing, stale, or over budget.
+`devimg` is a Rust CLI and GitHub Action for deterministic web image variants. It scans configured PNG/JPEG/WebP image folders, generates responsive PNG/JPEG/WebP/AVIF outputs, writes a JSON manifest and Markdown report, and lets CI fail when generated images are missing, stale, or over budget.
 
 The MVP has no web UI and no remote storage. The CLI is the source of truth; the GitHub Action wraps `devimg check` or `devimg optimize` and can optionally verify checked-in manifest exports.
 
@@ -62,7 +62,7 @@ exclude = ["**/generated/**"]
 [[preset]]
 name = "project-card"
 widths = [640, 960, 1280]
-formats = ["webp", "jpeg"]
+formats = ["webp", "jpeg"] # add "avif" explicitly when you want AVIF variants
 quality = 82
 fit = "cover"
 aspect_ratio = "16:9"
@@ -238,6 +238,6 @@ The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256
 
 ## MVP Limits
 
-- Stable format scope is PNG, JPEG, and WebP.
-- `quality` controls lossy JPEG and WebP output. PNG remains lossless.
+- Stable source image scope is PNG, JPEG, and WebP. AVIF is supported as an opt-in output format only.
+- `quality` controls lossy JPEG, WebP, and AVIF output. PNG remains lossless and ignores `quality`.
 - The Action does not commit generated files or post PR comments.

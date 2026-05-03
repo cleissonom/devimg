@@ -3,6 +3,7 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use image::{imageops::FilterType, DynamicImage};
+use ravif::{Encoder as AvifEncoder, Img as AvifImage, RGBA8};
 
 use crate::config::{CropPosition, FitMode, FormatKind};
 use crate::hash::{hash_bytes, hash_file};
@@ -180,6 +181,7 @@ fn encode_image(
             .write_to(&mut cursor, format.output_format(quality))
             .map_err(|source| source.to_string())?,
         FormatKind::Webp => return encode_webp(image, quality),
+        FormatKind::Avif => return encode_avif(image, quality),
     }
     Ok(cursor.into_inner())
 }
@@ -192,6 +194,30 @@ fn encode_webp(image: &DynamicImage, quality: u8) -> std::result::Result<Vec<u8>
         return Err("WebP encoder returned empty output".to_string());
     }
     Ok(encoded.to_vec())
+}
+
+fn encode_avif(image: &DynamicImage, quality: u8) -> std::result::Result<Vec<u8>, String> {
+    let rgba = image.to_rgba8();
+    let pixels = rgba
+        .pixels()
+        .map(|pixel| {
+            let [r, g, b, a] = pixel.0;
+            RGBA8 { r, g, b, a }
+        })
+        .collect::<Vec<_>>();
+    let encoded = AvifEncoder::new()
+        .with_quality(f32::from(quality.max(1)))
+        .with_speed(8)
+        .encode_rgba(AvifImage::new(
+            &pixels,
+            rgba.width() as usize,
+            rgba.height() as usize,
+        ))
+        .map_err(|source| source.to_string())?;
+    if encoded.avif_file.is_empty() {
+        return Err("AVIF encoder returned empty output".to_string());
+    }
+    Ok(encoded.avif_file)
 }
 
 fn safe_write(path: &Path, bytes: &[u8], allow_replace: bool) -> Result<()> {
@@ -239,6 +265,57 @@ mod tests {
         let decoded =
             image::load_from_memory_with_format(&high, ImageFormat::WebP).expect("webp decodes");
         assert_eq!((decoded.width(), decoded.height()), (128, 128));
+    }
+
+    #[test]
+    fn jpeg_quality_changes_encoded_size_and_preserves_dimensions() {
+        let image = detailed_image(128, 128);
+
+        let low = encode_image(&image, FormatKind::Jpeg, 10).expect("low quality jpeg encodes");
+        let high = encode_image(&image, FormatKind::Jpeg, 90).expect("high quality jpeg encodes");
+
+        assert_ne!(low, high);
+        assert!(
+            high.len() > low.len() + (low.len() / 5),
+            "expected high-quality JPEG to be materially larger, low={} high={}",
+            low.len(),
+            high.len()
+        );
+
+        let decoded =
+            image::load_from_memory_with_format(&high, ImageFormat::Jpeg).expect("jpeg decodes");
+        assert_eq!((decoded.width(), decoded.height()), (128, 128));
+    }
+
+    #[test]
+    fn png_quality_is_ignored_and_preserves_dimensions() {
+        let image = detailed_image(64, 64);
+
+        let low = encode_image(&image, FormatKind::Png, 10).expect("low quality png encodes");
+        let high = encode_image(&image, FormatKind::Png, 90).expect("high quality png encodes");
+
+        assert_eq!(low, high);
+
+        let decoded =
+            image::load_from_memory_with_format(&high, ImageFormat::Png).expect("png decodes");
+        assert_eq!((decoded.width(), decoded.height()), (64, 64));
+    }
+
+    #[test]
+    fn avif_quality_changes_encoded_size_and_writes_avif_bytes() {
+        let image = detailed_image(64, 64);
+
+        let low = encode_image(&image, FormatKind::Avif, 1).expect("low quality avif encodes");
+        let high = encode_image(&image, FormatKind::Avif, 90).expect("high quality avif encodes");
+
+        assert_ne!(low, high);
+        assert!(
+            high.len() > low.len(),
+            "expected high-quality AVIF to be larger, low={} high={}",
+            low.len(),
+            high.len()
+        );
+        assert_avif_container(&high);
     }
 
     #[test]
@@ -368,5 +445,14 @@ mod tests {
             ]);
         }
         DynamicImage::ImageRgba8(image)
+    }
+
+    fn assert_avif_container(bytes: &[u8]) {
+        assert!(bytes.len() > 16, "AVIF output should not be empty");
+        assert_eq!(&bytes[4..8], b"ftyp");
+        assert!(
+            bytes.windows(4).any(|window| window == b"avif"),
+            "AVIF output should contain the avif brand"
+        );
     }
 }

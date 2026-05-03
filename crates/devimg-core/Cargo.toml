@@ -2,6 +2,7 @@
 name = "devimg-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Core image pipeline logic for devimg"
@@ -10,6 +11,7 @@ description = "Core image pipeline logic for devimg"
 blake3 = "=1.8.2"
 globset = "=0.4.16"
 image = { version = "0.24.9", default-features = false, features = ["png", "jpeg", "webp"] }
+ravif = { version = "=0.13.0", default-features = false }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"

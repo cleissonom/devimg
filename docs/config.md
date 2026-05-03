@@ -53,8 +53,8 @@ Each `[[preset]]` entry has:
 
 - `name`
 - `widths`
-- `formats`: `png`, `jpeg`/`jpg`, `webp`
-- `quality`: `0..100`; applies to lossy JPEG and WebP output. PNG output remains lossless.
+- `formats`: `png`, `jpeg`/`jpg`, `webp`, `avif`
+- `quality`: `0..100`; applies to lossy JPEG, WebP, and AVIF output. PNG output remains lossless and ignores `quality`.
 - `fit`: `cover`, `contain`, or `fill`
 - `aspect_ratio`: optional, like `16:9` or `1200:630`
 - `crop`: optional cover-crop position; defaults to `center`
@@ -101,6 +101,13 @@ crop = "top"
 ```
 
 Overrides do not change preset `widths`, `formats`, or `aspect_ratio`; keep those in named presets so output shapes remain explicit.
+
+## Format Guidance
+
+- PNG: lossless output for graphics and transparency-sensitive assets; `quality` is intentionally ignored.
+- JPEG: lossy output for broad compatibility and opaque photos; `quality` directly affects encoded size.
+- WebP: lossy output through libwebp; `quality` directly affects encoded size and is usually a good default for modern frontend projects.
+- AVIF: opt-in lossy output through `ravif`; useful for aggressive byte savings on supported browsers, but generation is slower than WebP. DevImg does not scan AVIF source files yet.
 
 ## Budgets
 

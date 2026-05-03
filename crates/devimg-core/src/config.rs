@@ -85,6 +85,7 @@ pub enum FormatKind {
     Png,
     Jpeg,
     Webp,
+    Avif,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -104,6 +105,7 @@ impl FormatKind {
             "png" => Some(Self::Png),
             "jpg" | "jpeg" => Some(Self::Jpeg),
             "webp" => Some(Self::Webp),
+            "avif" => Some(Self::Avif),
             _ => None,
         }
     }
@@ -113,6 +115,7 @@ impl FormatKind {
             Self::Png => "png",
             Self::Jpeg => "jpeg",
             Self::Webp => "webp",
+            Self::Avif => "avif",
         }
     }
 
@@ -121,6 +124,7 @@ impl FormatKind {
             Self::Png => "png",
             Self::Jpeg => "jpeg",
             Self::Webp => "webp",
+            Self::Avif => "avif",
         }
     }
 
@@ -129,6 +133,7 @@ impl FormatKind {
             Self::Png => ImageFormat::Png,
             Self::Jpeg => ImageFormat::Jpeg,
             Self::Webp => ImageFormat::WebP,
+            Self::Avif => ImageFormat::Avif,
         }
     }
 
@@ -137,6 +142,14 @@ impl FormatKind {
             Self::Png => ImageOutputFormat::Png,
             Self::Jpeg => ImageOutputFormat::Jpeg(quality),
             Self::Webp => ImageOutputFormat::WebP,
+            Self::Avif => unreachable!("AVIF output uses the ravif encoder"),
+        }
+    }
+
+    pub fn supports_source_input(self) -> bool {
+        match self {
+            Self::Png | Self::Jpeg | Self::Webp => true,
+            Self::Avif => false,
         }
     }
 }
@@ -674,6 +687,32 @@ upscale = true
         assert!(config.presets[0].allow_upscale);
         assert_eq!(config.presets[0].quality, 82);
         assert_eq!(config.presets[0].formats, vec![FormatKind::Jpeg]);
+    }
+
+    #[test]
+    fn parses_avif_as_output_only_format() {
+        let raw = r#"
+[project]
+manifest = "public/images/devimg-manifest.json"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+
+[[preset]]
+name = "project-card"
+widths = [640]
+formats = ["webp", "avif"]
+"#;
+        let config = parse_config(Path::new("devimg.toml"), raw).expect("config parses");
+
+        assert_eq!(
+            config.presets[0].formats,
+            vec![FormatKind::Webp, FormatKind::Avif]
+        );
+        assert!(FormatKind::Webp.supports_source_input());
+        assert!(!FormatKind::Avif.supports_source_input());
     }
 
     #[test]

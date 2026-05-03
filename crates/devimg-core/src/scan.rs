@@ -145,7 +145,7 @@ fn collect_files(dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn has_supported_extension(path: &Path) -> bool {
-    format_from_extension(path).is_some()
+    format_from_extension(path).is_some_and(FormatKind::supports_source_input)
 }
 
 fn format_from_extension(path: &Path) -> Option<FormatKind> {
@@ -157,6 +157,7 @@ fn image_format_label(format: ImageFormat) -> &'static str {
         ImageFormat::Png => "png",
         ImageFormat::Jpeg => "jpeg",
         ImageFormat::WebP => "webp",
+        ImageFormat::Avif => "avif",
         _ => "unsupported",
     }
 }

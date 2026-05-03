@@ -2,6 +2,8 @@
 
 `devimg` releases are GitHub Releases built from version tags. The tag must match the workspace package version.
 
+Source builds require Rust 1.85 or newer. The GitHub release workflow uses the current stable toolchain.
+
 ## Publish
 
 For version `0.1.8`:
