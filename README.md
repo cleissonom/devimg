@@ -2,23 +2,37 @@
 
 `devimg` is a Rust CLI and GitHub Action for deterministic web image variants. It scans configured image folders, generates responsive PNG/JPEG/WebP outputs, writes a JSON manifest and Markdown report, and lets CI fail when generated images are missing, stale, or over budget.
 
-The MVP has no web UI and no remote storage. The CLI is the source of truth; the GitHub Action is a thin wrapper around `devimg check`.
+The MVP has no web UI and no remote storage. The CLI is the source of truth; the GitHub Action wraps `devimg check` or `devimg optimize` and can optionally verify checked-in manifest exports.
 
 ## Quickstart
 
 ```bash
 cargo run -p devimg-cli -- init --stdout > devimg.toml
+cargo run -p devimg-cli -- doctor --config devimg.toml
 cargo run -p devimg-cli -- optimize --config devimg.toml
 cargo run -p devimg-cli -- check --config devimg.toml
+cargo run -p devimg-cli -- doctor --config devimg.toml
 ```
 
 Useful commands:
 
 ```bash
+cargo run -p devimg-cli -- doctor --config examples/portfolio/devimg.toml
+cargo run -p devimg-cli -- doctor --config examples/portfolio/devimg.toml --json
 cargo run -p devimg-cli -- optimize --config examples/portfolio/devimg.toml --dry-run
 cargo run -p devimg-cli -- report --manifest examples/portfolio/public/images/devimg-manifest.json
 cargo run -p devimg-cli -- manifest export --manifest examples/portfolio/public/images/devimg-manifest.json
 cargo run -p devimg-cli -- inspect fixtures/images/sample.png
+```
+
+Recommended local loop:
+
+```bash
+devimg doctor --config devimg.toml
+devimg optimize --config devimg.toml --allow-overwrite
+devimg manifest export --manifest public/images/devimg-manifest.json --strip-prefix public --url-prefix / --format typescript --output lib/devimg.generated.ts
+devimg check --config devimg.toml
+devimg doctor --config devimg.toml --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 ```
 
 ## Config
@@ -97,6 +111,17 @@ devimg manifest export \
 
 The exported variants include `src`, `output_path`, `preset`, `fit`, `width`, `height`, `format`, `bytes`, and `hash`. `--strip-prefix public --url-prefix /` converts an output path such as `public/images/generated/card.project-card.640.jpeg` into `/images/generated/card.project-card.640.jpeg`.
 
+`devimg doctor` can also verify a checked-in export without rewriting it:
+
+```bash
+devimg doctor \
+  --config devimg.toml \
+  --export-output lib/devimg.generated.ts \
+  --export-format typescript \
+  --strip-prefix public \
+  --url-prefix /
+```
+
 For `fit = "cover"`, `crop` controls which part of the resized image is preserved when the aspect ratio requires cropping. It defaults to `center`. Use anchors such as `top`, `bottom`, `left`, `right`, `top-left`, or a normalized focal point:
 
 ```toml
@@ -114,6 +139,7 @@ fit = "contain"
 
 ## Safety
 
+- `doctor` is read-only. It does not generate images, rewrite reports, update manifests, or touch manifest export files.
 - `optimize --dry-run` plans work without writing files.
 - Existing unmanaged outputs are not overwritten unless config `overwrite = true` or CLI `--allow-overwrite` is used.
 - Re-encoding strips metadata by default. `strip_metadata = false` is parsed, but the MVP encoders do not preserve source metadata.
@@ -124,8 +150,14 @@ Exit codes are stable for CI:
 - `0`: success or help output.
 - `1`: runtime error outside config validation.
 - `2`: usage or config error.
-- `3`: `devimg check` failed.
+- `3`: `devimg check` failed, `devimg doctor` found required work, or `devimg manifest export --check` found a missing or stale export.
 - `4`: unsafe overwrite refused.
+
+## AI Agent Workflow
+
+Codex, Claude Code, and similar tools should run `devimg doctor --config devimg.toml` before editing image sources, config, manifests, generated variants, or app helper files. After changes, run the local loop above and commit the generated variants, manifest, report, and checked-in helper files together.
+
+Do not edit generated files by hand. If agent instruction files such as `AGENTS.md`, `CLAUDE.md`, or `.claude/skills/**` already exist, do not overwrite them; add project-specific guidance only through an explicit reviewed change.
 
 ## GitHub Action
 
@@ -137,13 +169,19 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.6
+      - uses: cleissonom/devimg/action@v0.1.7
         with:
           config: devimg.toml
           mode: check
+          export-output: lib/devimg.generated.ts
+          export-format: typescript
+          strip-prefix: public
+          url-prefix: /
 ```
 
 This repository's CI smoke test builds the CLI, runs the local composite Action with `uses: ./action`, and passes `binary-path: target/debug/devimg`. Consumer workflows should use the published Action path shown above.
+
+When `export-output` is set, the Action runs `devimg manifest export --check` after `devimg check` and fails if the checked-in helper file is missing or stale. It does not rewrite the helper.
 
 ## Development
 
@@ -158,8 +196,8 @@ cargo test --all
 Create a version tag that matches the workspace version and push it:
 
 ```bash
-git tag v0.1.6
-git push origin v0.1.6
+git tag v0.1.7
+git push origin v0.1.7
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

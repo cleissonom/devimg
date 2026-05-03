@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::budget::evaluate_budgets;
-pub use crate::check::check;
+pub use crate::check::{check, CheckOptions};
 use crate::config::{resolve_project_path_checked, Config, CropPosition, FitMode, FormatKind};
 use crate::manifest::{write_manifest, Manifest};
 pub use crate::plan::build_plan;

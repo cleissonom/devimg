@@ -1,6 +1,7 @@
 mod budget;
 mod check;
 mod config;
+mod doctor;
 mod hash;
 mod manifest;
 mod pipeline;
@@ -13,6 +14,10 @@ pub use config::{
     load_config, AspectRatio, BudgetConfig, Config, CropPosition, FitMode, FormatKind,
     PresetConfig, PresetOverrideConfig, ProjectConfig, SourceConfig,
 };
+pub use doctor::{
+    doctor, doctor_report_to_json, DoctorBudget, DoctorCheck, DoctorDiagnostic,
+    DoctorManifestExportFormat, DoctorManifestExportOptions, DoctorOptions, DoctorReport,
+};
 pub use hash::{hash_bytes, hash_file};
 pub use manifest::{
     export_manifest, manifest_export_to_json, manifest_export_to_typescript, read_manifest,
@@ -20,10 +25,10 @@ pub use manifest::{
     ManifestExportVariant, ManifestOutput,
 };
 pub use pipeline::{
-    build_plan, check, inspect_image, optimize, scan_sources, CheckIssue, CheckResult,
-    ImageInspection, Operation, OptimizeOptions, OptimizeResult, Plan, SourceImage,
+    build_plan, check, inspect_image, optimize, scan_sources, CheckIssue, CheckOptions,
+    CheckResult, ImageInspection, Operation, OptimizeOptions, OptimizeResult, Plan, SourceImage,
 };
-pub use report::{render_manifest_report, render_run_report};
+pub use report::{render_doctor_report, render_manifest_report, render_run_report};
 
 use std::path::PathBuf;
 

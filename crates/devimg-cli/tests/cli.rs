@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[test]
 fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["--help"]), 0);
+    assert_code(run(["doctor", "--help"]), 0);
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -16,7 +17,12 @@ fn missing_config_exits_2() {
     let project = temp_project("missing_config");
     let missing_config = path_arg(project.join("missing.toml"));
     let output = run(["optimize", "--config", missing_config.as_str()]);
-    assert_code(output, 2);
+    assert_status(&output, 2);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Hint:"));
+
+    let output = run(["doctor", "--config", missing_config.as_str()]);
+    assert_status(&output, 2);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Hint:"));
     cleanup(&project);
 }
 
@@ -47,6 +53,192 @@ fn optimize_and_check_success() {
     assert!(project.join("devimg-report.md").exists());
 
     assert_code(run(["check", "--config", config.as_str()]), 0);
+    cleanup(&project);
+}
+
+#[test]
+fn doctor_passes_after_optimize_and_emits_json() {
+    let project = fixture_project("doctor_success", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+
+    let human = run(["doctor", "--config", config.as_str()]);
+    assert_status(&human, 0);
+    let stdout = String::from_utf8_lossy(&human.stdout);
+    assert!(stdout.contains("DevImg Doctor"));
+    assert!(stdout.contains("Status: pass"));
+    assert!(stdout.contains("Next: devimg check --config"));
+
+    let json = run(["doctor", "--config", config.as_str(), "--json"]);
+    assert_status(&json, 0);
+    let document: serde_json::Value =
+        serde_json::from_slice(&json.stdout).expect("doctor JSON parses");
+    assert_eq!(document["status"], "pass");
+    assert_eq!(document["source_image_count"], 1);
+    assert_eq!(document["planned_variant_count"], 1);
+    assert_eq!(document["generated_variant_count"], 1);
+    assert!(document["issues"]
+        .as_array()
+        .expect("issues array")
+        .is_empty());
+    cleanup(&project);
+}
+
+#[test]
+fn doctor_reports_missing_manifest_without_writing() {
+    let project = fixture_project("doctor_missing_manifest", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    let output = run(["doctor", "--config", config.as_str(), "--json"]);
+
+    assert_status(&output, 3);
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("doctor JSON parses");
+    assert_eq!(document["status"], "fail");
+    assert!(document["issues"]
+        .as_array()
+        .expect("issues array")
+        .iter()
+        .any(|issue| issue["code"] == "missing_manifest"));
+    assert!(!project.join("public/images/devimg-manifest.json").exists());
+    assert!(!project.join("devimg-report.md").exists());
+    assert!(!project.join("public/images/generated").exists());
+    cleanup(&project);
+}
+
+#[test]
+fn doctor_reports_empty_and_missing_source_directories() {
+    let empty = temp_project("doctor_empty_source");
+    fs::create_dir_all(empty.join("assets/images")).expect("create empty source");
+    write_project_config(&empty, 64, "", r#"max_total_bytes = "5mb""#);
+    let empty_config = path_arg(empty.join("devimg.toml"));
+
+    let output = run(["doctor", "--config", empty_config.as_str()]);
+
+    assert_status(&output, 3);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("empty_sources"));
+    cleanup(&empty);
+
+    let missing = temp_project("doctor_missing_source");
+    write_project_config(&missing, 64, "", r#"max_total_bytes = "5mb""#);
+    let missing_config = path_arg(missing.join("devimg.toml"));
+
+    let output = run(["doctor", "--config", missing_config.as_str()]);
+
+    assert_status(&output, 3);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("missing_source_dir"));
+    cleanup(&missing);
+}
+
+#[test]
+fn doctor_reports_stale_output_and_budget_failure() {
+    let stale = fixture_project("doctor_stale", "sample.png");
+    let stale_config = path_arg(stale.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", stale_config.as_str()]), 0);
+    write_project_config(&stale, 32, "", r#"max_total_bytes = "5mb""#);
+
+    let output = run(["doctor", "--config", stale_config.as_str()]);
+
+    assert_status(&output, 3);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("outdated_config"));
+    assert!(stderr.contains("stale"));
+    assert!(stderr.contains("devimg optimize --config"));
+    cleanup(&stale);
+
+    let budget = fixture_project_with_budget(
+        "doctor_budget_failure",
+        "sample.png",
+        r#"max_total_bytes = "1b""#,
+    );
+    let budget_config = path_arg(budget.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", budget_config.as_str()]), 0);
+
+    let output = run(["doctor", "--config", budget_config.as_str()]);
+
+    assert_status(&output, 3);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("oversized_total"));
+    cleanup(&budget);
+}
+
+#[test]
+fn doctor_detects_manifest_export_drift() {
+    let project = fixture_project("doctor_export_drift", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    let manifest = path_arg(project.join("public/images/devimg-manifest.json"));
+    let generated = project.join("lib/devimg.generated.ts");
+    let generated_arg = path_arg(generated.clone());
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    assert_code(
+        run([
+            "manifest",
+            "export",
+            "--manifest",
+            manifest.as_str(),
+            "--format",
+            "typescript",
+            "--strip-prefix",
+            "public",
+            "--url-prefix",
+            "/",
+            "--output",
+            generated_arg.as_str(),
+        ]),
+        0,
+    );
+
+    assert_code(
+        run([
+            "doctor",
+            "--config",
+            config.as_str(),
+            "--export-output",
+            generated_arg.as_str(),
+            "--export-format",
+            "typescript",
+            "--strip-prefix",
+            "public",
+            "--url-prefix",
+            "/",
+        ]),
+        0,
+    );
+
+    fs::write(&generated, "stale\n").expect("write stale generated module");
+    let output = run([
+        "doctor",
+        "--config",
+        config.as_str(),
+        "--json",
+        "--export-output",
+        generated_arg.as_str(),
+        "--export-format",
+        "typescript",
+        "--strip-prefix",
+        "public",
+        "--url-prefix",
+        "/",
+    ]);
+
+    assert_status(&output, 3);
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("doctor JSON parses");
+    assert!(document["issues"]
+        .as_array()
+        .expect("issues array")
+        .iter()
+        .any(|issue| issue["code"] == "manifest_export_stale"));
+    assert_eq!(
+        fs::read_to_string(&generated).expect("stale module reads"),
+        "stale\n"
+    );
     cleanup(&project);
 }
 
@@ -87,7 +279,9 @@ fn check_fails_with_exit_3_when_output_is_deleted() {
     fs::remove_file(project.join("public/images/generated/sample.project-card.64.webp"))
         .expect("remove output");
 
-    assert_code(run(["check", "--config", config.as_str()]), 3);
+    let output = run(["check", "--config", config.as_str()]);
+    assert_status(&output, 3);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Hint:"));
     cleanup(&project);
 }
 
@@ -245,6 +439,7 @@ fn manifest_export_outputs_app_mapping() {
     ]);
     assert_status(&check_stale, 3);
     assert!(String::from_utf8_lossy(&check_stale.stderr).contains("is stale"));
+    assert!(String::from_utf8_lossy(&check_stale.stderr).contains("Hint:"));
     assert_eq!(
         fs::read_to_string(&generated).expect("stale module reads"),
         "stale\n"
@@ -268,6 +463,7 @@ fn manifest_export_outputs_app_mapping() {
     ]);
     assert_status(&check_missing, 3);
     assert!(String::from_utf8_lossy(&check_missing.stderr).contains("is missing"));
+    assert!(String::from_utf8_lossy(&check_missing.stderr).contains("Hint:"));
     cleanup(&project);
 }
 

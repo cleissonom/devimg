@@ -5,6 +5,7 @@ on:
     paths:
       - "assets/images/**"
       - "devimg.toml"
+      - "lib/devimg.generated.ts"
 
 jobs:
   images:
@@ -13,7 +14,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.6
+      - uses: cleissonom/devimg/action@v0.1.7
         with:
           config: devimg.toml
           mode: check
+          export-output: lib/devimg.generated.ts
+          export-format: typescript
+          strip-prefix: public
+          url-prefix: /

@@ -25,7 +25,7 @@ inputs:
   version:
     description: Release version to download when no binary is available
     required: false
-    default: v0.1.6
+    default: v0.1.7
   report-path:
     description: Markdown report path to append to the job summary
     required: false
@@ -34,6 +34,22 @@ inputs:
     description: Expected manifest path
     required: false
     default: public/images/devimg-manifest.json
+  export-output:
+    description: Optional checked-in manifest export/helper path to verify in check mode
+    required: false
+  export-manifest:
+    description: Optional manifest path to export; defaults to manifest-path when omitted
+    required: false
+  export-format:
+    description: "Manifest export format: json or typescript"
+    required: false
+    default: json
+  strip-prefix:
+    description: Optional project path prefix to strip from exported image URLs
+    required: false
+  url-prefix:
+    description: Optional URL prefix to add to exported image URLs
+    required: false
 
 outputs:
   status:
@@ -101,6 +117,11 @@ runs:
         DEVIMG_FAIL_ON_WARNING: ${{ inputs.fail-on-warning }}
         DEVIMG_REPORT_PATH: ${{ inputs.report-path }}
         DEVIMG_MANIFEST_PATH: ${{ inputs.manifest-path }}
+        DEVIMG_EXPORT_OUTPUT: ${{ inputs.export-output }}
+        DEVIMG_EXPORT_MANIFEST: ${{ inputs.export-manifest }}
+        DEVIMG_EXPORT_FORMAT: ${{ inputs.export-format }}
+        DEVIMG_STRIP_PREFIX: ${{ inputs.strip-prefix }}
+        DEVIMG_URL_PREFIX: ${{ inputs.url-prefix }}
       run: |
         set +e
         reject_multiline() {
@@ -116,6 +137,15 @@ runs:
         reject_multiline "config" "$DEVIMG_CONFIG"
         reject_multiline "report-path" "$DEVIMG_REPORT_PATH"
         reject_multiline "manifest-path" "$DEVIMG_MANIFEST_PATH"
+        reject_multiline "export-output" "$DEVIMG_EXPORT_OUTPUT"
+        reject_multiline "export-manifest" "$DEVIMG_EXPORT_MANIFEST"
+        reject_multiline "export-format" "$DEVIMG_EXPORT_FORMAT"
+        reject_multiline "strip-prefix" "$DEVIMG_STRIP_PREFIX"
+        reject_multiline "url-prefix" "$DEVIMG_URL_PREFIX"
+        case "$DEVIMG_EXPORT_FORMAT" in
+          json|typescript) ;;
+          *) echo "Unsupported export-format: $DEVIMG_EXPORT_FORMAT" >&2; exit 2 ;;
+        esac
         bin="$DEVIMG_BIN"
         mode="$DEVIMG_MODE"
         config="$DEVIMG_CONFIG"
@@ -133,6 +163,28 @@ runs:
         fi
         "$bin" "${args[@]}"
         code="$?"
+        if [[ "$code" == "0" && "$mode" == "check" && -n "$DEVIMG_EXPORT_OUTPUT" ]]; then
+          export_manifest="$DEVIMG_EXPORT_MANIFEST"
+          if [[ -z "$export_manifest" ]]; then
+            export_manifest="$DEVIMG_MANIFEST_PATH"
+          fi
+          export_args=(
+            manifest
+            export
+            --manifest "$export_manifest"
+            --format "$DEVIMG_EXPORT_FORMAT"
+            --output "$DEVIMG_EXPORT_OUTPUT"
+            --check
+          )
+          if [[ -n "$DEVIMG_STRIP_PREFIX" ]]; then
+            export_args+=(--strip-prefix "$DEVIMG_STRIP_PREFIX")
+          fi
+          if [[ -n "$DEVIMG_URL_PREFIX" ]]; then
+            export_args+=(--url-prefix "$DEVIMG_URL_PREFIX")
+          fi
+          "$bin" "${export_args[@]}"
+          code="$?"
+        fi
         if [[ "$code" != "0" ]]; then
           status="fail"
         fi

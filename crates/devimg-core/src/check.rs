@@ -12,7 +12,22 @@ use crate::pipeline::{
 use crate::transform::final_output_project_path;
 use crate::{build_plan, scan_sources, DevimgError, Result};
 
+#[derive(Debug, Clone, Copy)]
+pub struct CheckOptions {
+    pub write_report: bool,
+}
+
+impl Default for CheckOptions {
+    fn default() -> Self {
+        Self { write_report: true }
+    }
+}
+
 pub fn check(config: &Config) -> Result<CheckResult> {
+    check_with_options(config, CheckOptions::default())
+}
+
+pub fn check_with_options(config: &Config, options: CheckOptions) -> Result<CheckResult> {
     let sources = scan_sources(config)?;
     let plan = build_plan(config, &sources)?;
     let manifest_path =
@@ -149,7 +164,9 @@ pub fn check(config: &Config) -> Result<CheckResult> {
         budget_status,
         manifest: result_manifest,
     };
-    write_report(config, &result)?;
+    if options.write_report {
+        write_report(config, &result)?;
+    }
     Ok(CheckResult {
         passed: result.issues.is_empty(),
         result,

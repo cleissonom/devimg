@@ -47,6 +47,15 @@ jobs:
           report-path: examples/portfolio/devimg-report.md
           manifest-path: examples/portfolio/public/images/devimg-manifest.json
 
+      - name: Generate smoke manifest export
+        run: |
+          target/debug/devimg manifest export \
+            --manifest examples/portfolio/public/images/devimg-manifest.json \
+            --format typescript \
+            --strip-prefix public \
+            --url-prefix / \
+            --output "${RUNNER_TEMP}/devimg.generated.ts"
+
       - name: Smoke local action check
         uses: ./action
         with:
@@ -55,8 +64,13 @@ jobs:
           binary-path: target/debug/devimg
           report-path: examples/portfolio/devimg-report.md
           manifest-path: examples/portfolio/public/images/devimg-manifest.json
+          export-output: ${{ runner.temp }}/devimg.generated.ts
+          export-format: typescript
+          strip-prefix: public
+          url-prefix: /
 
       - name: Verify action smoke artifacts
         run: |
           test -s examples/portfolio/devimg-report.md
           test -s examples/portfolio/public/images/devimg-manifest.json
+          test -s "${RUNNER_TEMP}/devimg.generated.ts"
