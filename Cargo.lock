@@ -352,7 +352,7 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
 name = "devimg-cli"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "clap",
  "devimg-core",
@@ -361,7 +361,7 @@ dependencies = [
 
 [[package]]
 name = "devimg-core"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "blake3",
  "globset",
