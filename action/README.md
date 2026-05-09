@@ -25,7 +25,7 @@ jobs:
 - `config`: config path. Default: `devimg.toml`.
 - `mode`: `check` or `optimize`. Default: `check`.
 - `working-directory`: command working directory. Default: `.`.
-- `fail-on-warning`: pass `--fail-on-warning` in check mode.
+- `fail-on-warning`: pass `--fail-on-warning` in check mode, including advisory quality diagnostics.
 - `binary-path`: use a prebuilt local binary, useful for smoke tests.
 - `version`: release version to download when no binary is found. Default: `v0.1.9`.
 - `report-path`: configured report path appended to the step summary; this does not override `devimg.toml`.

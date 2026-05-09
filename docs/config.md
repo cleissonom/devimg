@@ -109,6 +109,27 @@ Overrides do not change preset `widths`, `formats`, or `aspect_ratio`; keep thos
 - WebP: lossy output through libwebp; `quality` directly affects encoded size and is usually a good default for modern frontend projects.
 - AVIF: opt-in lossy output through `ravif`; useful for aggressive byte savings on supported browsers, but generation is slower than WebP. DevImg does not scan AVIF source files yet.
 
+## Quality Diagnostics
+
+DevImg keeps quality decisions explicit in config, but it warns when common settings are likely to surprise developers:
+
+- `quality:` warnings are advisory by default.
+- `devimg check --fail-on-warning` turns warnings into exit code `3`.
+- `devimg doctor --json` exposes quality warnings with code `quality_warning`.
+- Markdown reports include warnings from `optimize` and `check`.
+- `devimg review` includes manifest-only quality warnings such as upscaled outputs and outputs larger than their source files.
+
+Current diagnostics:
+
+- JPEG/WebP quality below `70`, or below `82` for screenshot-, banner-, card-, hero-, logo-, diagram-, UI-, or text-like assets.
+- AVIF quality below `45`, or below `60` for those detail-sensitive assets.
+- Requested variants that would require upscaling; DevImg skips them unless `allow_upscale = true`.
+- `allow_upscale = true` variants that enlarge source dimensions and may look soft.
+- `fit = "cover"` variants that crop about 15% or more of the resized image.
+- Generated output files that are larger than their source file.
+
+Larger generated files are not always wrong. They can happen when the source is already aggressively optimized, when quality is intentionally high, when converting formats, or when graphics/transparency compress better in the source format. Compare visually before lowering quality.
+
 ## Budgets
 
 `max_total_bytes` and `max_file_bytes` accept byte strings such as `350kb`, `3mb`, or raw byte counts.

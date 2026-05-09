@@ -9,6 +9,7 @@ use crate::manifest::{Manifest, ManifestOutput};
 use crate::pipeline::{
     path_to_string, unique_source_bytes, write_report, CheckIssue, CheckResult, OptimizeResult,
 };
+use crate::quality::{append_unique, manifest_quality_warnings};
 use crate::transform::final_output_project_path;
 use crate::{build_plan, scan_sources, DevimgError, Result};
 
@@ -140,13 +141,15 @@ pub fn check_with_options(config: &Config, options: CheckOptions) -> Result<Chec
         config.config_hash.clone(),
         actual_outputs,
     );
+    let mut warnings = plan.warnings;
+    append_unique(&mut warnings, manifest_quality_warnings(&result_manifest));
     let result = OptimizeResult {
         mode: "check".to_string(),
         source_count: sources.len(),
         planned_count: plan.operations.len(),
         source_bytes: unique_source_bytes(&sources),
         output_bytes: total_output_bytes,
-        warnings: plan.warnings,
+        warnings,
         issues,
         budget_status,
         manifest: result_manifest,

@@ -9,6 +9,7 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["--help"]), 0);
     assert_code(run(["doctor", "--help"]), 0);
     assert_code(run(["compare", "--help"]), 0);
+    assert_code(run(["review", "--help"]), 0);
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -335,11 +336,19 @@ fn report_manifest_errors_use_stable_exit_codes() {
     let project = temp_project("report_errors");
     let missing = path_arg(project.join("missing-manifest.json"));
     assert_code(run(["report", "--manifest", missing.as_str()]), 1);
+    assert_code(
+        run(["review", "--manifest", missing.as_str(), "--stdout"]),
+        1,
+    );
 
     let malformed = project.join("bad-manifest.json");
     fs::write(&malformed, "{").expect("write malformed manifest");
     let malformed = path_arg(malformed);
     assert_code(run(["report", "--manifest", malformed.as_str()]), 2);
+    assert_code(
+        run(["review", "--manifest", malformed.as_str(), "--stdout"]),
+        2,
+    );
     cleanup(&project);
 }
 
@@ -465,6 +474,75 @@ fn manifest_export_outputs_app_mapping() {
     assert_status(&check_missing, 3);
     assert!(String::from_utf8_lossy(&check_missing.stderr).contains("is missing"));
     assert!(String::from_utf8_lossy(&check_missing.stderr).contains("Hint:"));
+    cleanup(&project);
+}
+
+#[test]
+fn review_writes_visual_artifact_and_refuses_unsafe_overwrite() {
+    let project = fixture_project("review_artifact", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    let manifest = path_arg(project.join("public/images/devimg-manifest.json"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+
+    let missing_output_mode = run(["review", "--manifest", manifest.as_str()]);
+    assert_status(&missing_output_mode, 2);
+    assert!(String::from_utf8_lossy(&missing_output_mode.stderr)
+        .contains("exactly one of --output or --stdout"));
+
+    let stdout = run(["review", "--manifest", manifest.as_str(), "--stdout"]);
+    assert_status(&stdout, 0);
+    let stdout_html = String::from_utf8_lossy(&stdout.stdout);
+    assert!(stdout_html.starts_with("<!doctype html>"));
+    assert!(stdout_html.contains("DevImg visual review"));
+    assert!(stdout_html.contains("assets/images/sample.png"));
+    assert!(stdout_html.contains("public/images/generated/sample.project-card.64.webp"));
+    assert!(!project.join(".devimg/review.html").exists());
+
+    let review = project.join(".devimg/review.html");
+    let review_arg = path_arg(review.clone());
+    assert_code(
+        run([
+            "review",
+            "--manifest",
+            manifest.as_str(),
+            "--output",
+            review_arg.as_str(),
+        ]),
+        0,
+    );
+    let html = fs::read_to_string(&review).expect("review artifact reads");
+    assert!(html.contains("src=\"../public/images/generated/sample.project-card.64.webp\""));
+    assert!(html.contains("href=\"../assets/images/sample.png\""));
+
+    fs::write(&review, "existing\n").expect("write existing review artifact");
+    let refused = run([
+        "review",
+        "--manifest",
+        manifest.as_str(),
+        "--output",
+        review_arg.as_str(),
+    ]);
+    assert_status(&refused, 4);
+    assert_eq!(
+        fs::read_to_string(&review).expect("review artifact reads"),
+        "existing\n"
+    );
+
+    assert_code(
+        run([
+            "review",
+            "--manifest",
+            manifest.as_str(),
+            "--output",
+            review_arg.as_str(),
+            "--force",
+        ]),
+        0,
+    );
+    assert!(fs::read_to_string(&review)
+        .expect("forced review artifact reads")
+        .contains("Generated image variants"));
     cleanup(&project);
 }
 
@@ -640,6 +718,67 @@ fn check_fail_on_warning_turns_warning_into_exit_3() {
         run(["check", "--config", config.as_str(), "--fail-on-warning"]),
         3,
     );
+    cleanup(&project);
+}
+
+#[test]
+fn quality_diagnostics_are_reported_and_can_fail_strict_check() {
+    let project = temp_project("quality_diagnostics");
+    let source = project.join("assets/images/hero-screenshot.png");
+    fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+    fs::copy(fixture_image(), &source).expect("copy fixture image");
+    fs::write(
+        project.join("devimg.toml"),
+        r#"[project]
+root = "."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png"]
+
+[[preset]]
+name = "hero"
+widths = [64]
+formats = ["webp"]
+quality = 74
+fit = "cover"
+aspect_ratio = "16:9"
+
+[budgets]
+max_total_bytes = "5mb"
+"#,
+    )
+    .expect("write quality config");
+    let config = path_arg(project.join("devimg.toml"));
+
+    let optimize = run(["optimize", "--config", config.as_str()]);
+    assert_status(&optimize, 0);
+    assert!(String::from_utf8_lossy(&optimize.stdout).contains("quality:"));
+    assert!(fs::read_to_string(project.join("devimg-report.md"))
+        .expect("report reads")
+        .contains("quality:"));
+
+    let default_check = run(["check", "--config", config.as_str()]);
+    assert_status(&default_check, 0);
+    assert!(String::from_utf8_lossy(&default_check.stdout).contains("quality:"));
+
+    let strict_check = run(["check", "--config", config.as_str(), "--fail-on-warning"]);
+    assert_status(&strict_check, 3);
+    assert!(String::from_utf8_lossy(&strict_check.stderr).contains("quality:"));
+
+    let doctor = run(["doctor", "--config", config.as_str(), "--json"]);
+    assert_status(&doctor, 0);
+    let document: serde_json::Value =
+        serde_json::from_slice(&doctor.stdout).expect("doctor JSON parses");
+    assert!(document["warnings"]
+        .as_array()
+        .expect("warnings array")
+        .iter()
+        .any(|warning| warning["code"] == "quality_warning"));
     cleanup(&project);
 }
 

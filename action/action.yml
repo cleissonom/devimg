@@ -16,7 +16,7 @@ inputs:
     required: false
     default: .
   fail-on-warning:
-    description: Treat warnings as CI failures for check mode
+    description: Treat warnings, including quality diagnostics, as CI failures for check mode
     required: false
     default: "false"
   binary-path:

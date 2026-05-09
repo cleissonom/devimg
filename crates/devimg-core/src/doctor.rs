@@ -182,12 +182,7 @@ pub fn doctor(config: &Config, options: DoctorOptions) -> Result<DoctorReport> {
                 output_bytes = check_result.result.output_bytes;
                 budget_status = check_result.result.budget_status.clone();
                 for warning in check_result.result.warnings {
-                    warnings.push(diagnostic(
-                        "plan_warning",
-                        config_path.as_str(),
-                        warning,
-                        "Review the preset/source config, then run `devimg doctor` again.",
-                    ));
+                    warnings.push(warning_diagnostic(&warning, &config_path));
                 }
                 for issue in check_result.result.issues {
                     issues.push(check_issue_diagnostic(&issue, &config_path));
@@ -437,6 +432,23 @@ fn check_issue_diagnostic(issue: &CheckIssue, config_path: &str) -> DoctorDiagno
         issue.path.as_str(),
         issue.message.as_str(),
         hint,
+    )
+}
+
+fn warning_diagnostic(warning: &str, config_path: &str) -> DoctorDiagnostic {
+    if warning.starts_with("quality:") {
+        return diagnostic(
+            "quality_warning",
+            config_path,
+            warning,
+            "Tune preset quality, fit/crop, widths, or source assets in devimg.toml, then run `devimg doctor` again.",
+        );
+    }
+    diagnostic(
+        "plan_warning",
+        config_path,
+        warning,
+        "Review the preset/source config, then run `devimg doctor` again.",
     )
 }
 

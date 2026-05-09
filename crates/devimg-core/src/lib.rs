@@ -7,7 +7,9 @@ mod hash;
 mod manifest;
 mod pipeline;
 mod plan;
+mod quality;
 mod report;
+mod review;
 mod scan;
 mod transform;
 
@@ -36,6 +38,7 @@ pub use pipeline::{
 pub use report::{
     render_doctor_report, render_manifest_compare_report, render_manifest_report, render_run_report,
 };
+pub use review::{render_manifest_review, ManifestReviewOptions};
 
 use std::path::PathBuf;
 

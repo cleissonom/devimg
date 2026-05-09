@@ -7,6 +7,7 @@ pub use crate::check::{check, CheckOptions};
 use crate::config::{resolve_project_path_checked, Config, CropPosition, FitMode, FormatKind};
 use crate::manifest::{write_manifest, Manifest};
 pub use crate::plan::build_plan;
+use crate::quality::{append_unique, manifest_quality_warnings};
 use crate::report::render_run_report;
 pub use crate::scan::{inspect_image, scan_sources};
 use crate::transform::execute_operation;
@@ -141,6 +142,7 @@ pub fn optimize(config: &Config, options: OptimizeOptions) -> Result<OptimizeRes
     );
     let (budget_status, issues) = evaluate_budgets(config, &manifest.outputs);
     let output_bytes = manifest.output_bytes_total();
+    append_unique(&mut warnings, manifest_quality_warnings(&manifest));
     if !issues.is_empty() {
         warnings.push(format!(
             "budget status is fail with {} issue(s); `devimg check` will fail",

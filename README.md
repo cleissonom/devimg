@@ -24,6 +24,7 @@ cargo run -p devimg-cli -- doctor --config examples/portfolio/devimg.toml --json
 cargo run -p devimg-cli -- agent init --target both --stdout
 cargo run -p devimg-cli -- optimize --config examples/portfolio/devimg.toml --dry-run
 cargo run -p devimg-cli -- report --manifest examples/portfolio/public/images/devimg-manifest.json
+cargo run -p devimg-cli -- review --manifest examples/portfolio/public/images/devimg-manifest.json --output examples/portfolio/.devimg/review.html
 cargo run -p devimg-cli -- manifest export --manifest examples/portfolio/public/images/devimg-manifest.json
 cargo run -p devimg-cli -- compare --base old-devimg-manifest.json --head public/images/devimg-manifest.json
 cargo run -p devimg-cli -- inspect fixtures/images/sample.png
@@ -145,6 +146,45 @@ devimg compare \
   --json
 ```
 
+## Visual Review
+
+Use `review` to turn a generated manifest into a local static HTML artifact for human review and AI-agent context:
+
+```bash
+devimg review \
+  --manifest public/images/devimg-manifest.json \
+  --output .devimg/review.html
+```
+
+Use `--stdout` when another tool should capture the artifact directly:
+
+```bash
+devimg review --manifest public/images/devimg-manifest.json --stdout
+```
+
+The review groups variants by source image, shows source and generated previews, dimensions, formats, byte sizes, hashes, largest sources, largest outputs, and manifest-only warnings such as upscaled variants or outputs larger than their source files. It has no external scripts, no CDN assets, and no tracking. Because it only reads the manifest, budget status is shown as not evaluated; run `devimg check --config devimg.toml` for budget enforcement.
+
+`review --output` refuses to overwrite an existing file unless `--force` is passed. When written inside the project, for example `.devimg/review.html`, image links are made relative to the artifact so the file can be opened directly in a browser.
+
+## Quality Diagnostics
+
+DevImg emits advisory `quality:` warnings when config or generated outputs look suspicious. These warnings do not change generated images automatically and do not fail default `devimg check`; tune `devimg.toml` explicitly when a warning is valid for your project.
+
+Warnings currently cover:
+
+- Low JPEG/WebP/AVIF quality for assets that look screenshot-, banner-, card-, hero-, logo-, diagram-, UI-, or text-heavy.
+- Requested widths that would require upscaling, including explicit `allow_upscale = true`.
+- `fit = "cover"` plus an aspect ratio that crops a material part of the resized image.
+- Generated outputs that are larger than their source file.
+
+Use stricter CI when warnings should block a branch:
+
+```bash
+devimg check --config devimg.toml --fail-on-warning
+```
+
+Use `devimg doctor --json` when an AI agent or CI tool needs machine-readable `quality_warning` entries. Use `devimg review` for manifest-only visual checks of upscaled outputs and output-size surprises.
+
 For `fit = "cover"`, `crop` controls which part of the resized image is preserved when the aspect ratio requires cropping. It defaults to `center`. Use anchors such as `top`, `bottom`, `left`, `right`, `top-left`, or a normalized focal point:
 
 ```toml
@@ -166,7 +206,7 @@ fit = "contain"
 - `optimize --dry-run` plans work without writing files.
 - Existing unmanaged outputs are not overwritten unless config `overwrite = true` or CLI `--allow-overwrite` is used.
 - Re-encoding strips metadata by default. `strip_metadata = false` is parsed, but the MVP encoders do not preserve source metadata.
-- `check` fails on missing outputs, stale manifests, modified outputs, outdated config hashes, and byte budget violations.
+- `check` fails on missing outputs, stale manifests, modified outputs, outdated config hashes, and byte budget violations. Add `--fail-on-warning` when advisory warnings should fail CI.
 
 Exit codes are stable for CI:
 

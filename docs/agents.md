@@ -8,11 +8,16 @@ Recommended loop:
 devimg doctor --config devimg.toml
 devimg optimize --config devimg.toml --allow-overwrite
 devimg manifest export --manifest public/images/devimg-manifest.json --strip-prefix public --url-prefix / --format typescript --output lib/devimg.generated.ts
+devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html
 devimg check --config devimg.toml
 devimg doctor --config devimg.toml --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 ```
 
 Use `devimg doctor --json` when an agent or CI job needs deterministic machine-readable state.
+
+Treat `quality_warning` entries as prompts for review, not as permission to auto-tune images. Prefer proposing explicit `devimg.toml` changes such as raising `quality`, reducing `widths`, changing `fit`/`crop`, using `fit = "contain"`, or replacing a too-small source image.
+
+Use `devimg review --stdout` when an agent needs static HTML context without creating a file. Use `--output .devimg/review.html` for a browser-openable local review artifact, and do not overwrite an existing artifact unless the user explicitly approves `--force`.
 
 Do not edit generated files by hand. Commit generated variants, `devimg-manifest.json`, `devimg-report.md`, and checked-in manifest helper files together when they change.
 

@@ -7,8 +7,9 @@ use devimg_core::{
     check, compare_manifests, doctor, doctor_report_to_json, inspect_image, load_config,
     manifest_compare_to_json, manifest_export_to_json, manifest_export_to_typescript, optimize,
     read_manifest, render_doctor_report, render_manifest_compare_report, render_manifest_report,
-    render_run_report, DevimgError, DoctorManifestExportFormat, DoctorManifestExportOptions,
-    DoctorOptions, ManifestCompareOptions, ManifestExportOptions, OptimizeOptions,
+    render_manifest_review, render_run_report, DevimgError, DoctorManifestExportFormat,
+    DoctorManifestExportOptions, DoctorOptions, ManifestCompareOptions, ManifestExportOptions,
+    ManifestReviewOptions, OptimizeOptions,
 };
 
 fn main() {
@@ -63,6 +64,7 @@ where
         Command::Check(args) => command_check(args),
         Command::Doctor(args) => command_doctor(args),
         Command::Report(args) => command_report(args),
+        Command::Review(args) => command_review(args),
         Command::Compare(args) => command_compare(args),
         Command::Inspect(args) => command_inspect(args),
         Command::Manifest(args) => command_manifest(args),
@@ -91,6 +93,7 @@ enum Command {
     Check(CheckArgs),
     Doctor(DoctorArgs),
     Report(ReportArgs),
+    Review(ReviewArgs),
     Compare(CompareArgs),
     Inspect(InspectArgs),
     Manifest(ManifestArgs),
@@ -154,6 +157,18 @@ struct DoctorArgs {
 struct ReportArgs {
     #[arg(long)]
     manifest: PathBuf,
+}
+
+#[derive(Debug, Args)]
+struct ReviewArgs {
+    #[arg(long)]
+    manifest: PathBuf,
+    #[arg(long)]
+    output: Option<PathBuf>,
+    #[arg(long)]
+    stdout: bool,
+    #[arg(long)]
+    force: bool,
 }
 
 #[derive(Debug, Args)]
@@ -324,6 +339,53 @@ fn command_report(args: ReportArgs) -> Result<(), CliError> {
     Ok(())
 }
 
+fn command_review(args: ReviewArgs) -> Result<(), CliError> {
+    if args.stdout == args.output.is_some() {
+        return Err(CliError::Core(DevimgError::config(
+            &args.manifest,
+            "devimg review requires exactly one of --output or --stdout",
+        )));
+    }
+
+    let manifest = read_manifest(&args.manifest)?;
+    let project_root = review_project_root(&args.manifest, &manifest);
+    let asset_path_prefix = args
+        .output
+        .as_deref()
+        .map(|output| review_asset_path_prefix(output, &project_root))
+        .transpose()?
+        .unwrap_or_default();
+    let rendered = render_manifest_review(
+        &manifest,
+        &ManifestReviewOptions {
+            asset_path_prefix,
+            ..ManifestReviewOptions::default()
+        },
+    );
+
+    if args.stdout {
+        print!("{rendered}");
+        return Ok(());
+    }
+
+    let output = args
+        .output
+        .expect("output exists because stdout/output exclusivity is checked");
+    if output.exists() && !args.force {
+        return Err(CliError::Core(DevimgError::UnsafeOverwrite {
+            path: output,
+        }));
+    }
+    if let Some(parent) = output.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|source| DevimgError::io(parent, source))?;
+        }
+    }
+    fs::write(&output, rendered).map_err(|source| DevimgError::io(&output, source))?;
+    println!("Created {}", output.display());
+    Ok(())
+}
+
 fn command_compare(args: CompareArgs) -> Result<(), CliError> {
     let base = read_manifest(&args.base)?;
     let head = read_manifest(&args.head)?;
@@ -458,7 +520,7 @@ fn command_manifest_export(args: ManifestExportArgs) -> Result<(), CliError> {
 
 fn with_check_hint(report: String, config_path: &Path) -> String {
     format!(
-        "{report}\nHint: If outputs are missing or stale, regenerate them with `{}`. For budget failures, reduce image bytes or adjust budgets.\nNext: {}\n",
+        "{report}\nHint: If outputs are missing or stale, regenerate them with `{}`. For budget failures, reduce image bytes or adjust budgets. If `--fail-on-warning` failed on quality diagnostics, tune quality, fit/crop, widths, or source assets in the config.\nNext: {}\n",
         optimize_command(config_path),
         doctor_command(config_path)
     )
@@ -481,7 +543,7 @@ fn render_core_error(error: &DevimgError) -> String {
         }
         DevimgError::UnsafeOverwrite { .. } => {
             out.push_str(
-                "\nHint: devimg will not replace unmanaged outputs unless you rerun optimize with `--allow-overwrite` or set `[project].overwrite = true`.",
+                "\nHint: devimg will not replace existing files unless you pass the command-specific overwrite flag (`--force` or `--allow-overwrite`).",
             );
         }
         DevimgError::Image { .. } => {
@@ -506,6 +568,103 @@ fn manifest_export_write_command(args: &ManifestExportArgs, output: &Path) -> St
     }
     command.push_str(&format!(" --output {}", shell_arg_path(output)));
     command
+}
+
+fn review_project_root(manifest_path: &Path, manifest: &devimg_core::Manifest) -> PathBuf {
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if !manifest.config_path.is_empty() {
+        let config_path = PathBuf::from(&manifest.config_path);
+        let config_path = if config_path.is_absolute() {
+            config_path
+        } else {
+            current_dir.join(config_path)
+        };
+        if let Ok(config) = load_config(&config_path) {
+            return config.project.root;
+        }
+        if let Some(parent) = config_path.parent() {
+            return normalize_lexical(parent);
+        }
+    }
+    if let Some(project_root) =
+        infer_review_project_root_from_manifest_path(manifest_path, manifest)
+    {
+        return project_root;
+    }
+    if manifest_path.is_absolute() {
+        if let Some(parent) = manifest_path.parent() {
+            return normalize_lexical(parent);
+        }
+    }
+    current_dir
+}
+
+fn infer_review_project_root_from_manifest_path(
+    manifest_path: &Path,
+    manifest: &devimg_core::Manifest,
+) -> Option<PathBuf> {
+    if !manifest_path.is_absolute() {
+        return None;
+    }
+    let parent = manifest_path.parent()?;
+    for ancestor in parent.ancestors() {
+        if manifest.outputs.iter().any(|output| {
+            ancestor.join(&output.output_path).exists()
+                || ancestor.join(&output.source_path).exists()
+        }) {
+            return Some(normalize_lexical(ancestor));
+        }
+    }
+    None
+}
+
+fn review_asset_path_prefix(output: &Path, project_root: &Path) -> Result<String, CliError> {
+    let current_dir = std::env::current_dir().map_err(|source| DevimgError::io(".", source))?;
+    let output = normalize_lexical(&if output.is_absolute() {
+        output.to_path_buf()
+    } else {
+        current_dir.join(output)
+    });
+    let project_root = normalize_lexical(project_root);
+    let output_parent = output.parent().unwrap_or(project_root.as_path());
+
+    if output_parent == project_root {
+        return Ok(String::new());
+    }
+
+    if let Ok(relative_parent) = output_parent.strip_prefix(&project_root) {
+        let depth = relative_parent
+            .components()
+            .filter(|component| matches!(component, std::path::Component::Normal(_)))
+            .count();
+        if depth == 0 {
+            Ok(String::new())
+        } else {
+            Ok((0..depth).map(|_| "..").collect::<Vec<_>>().join("/"))
+        }
+    } else if let Ok(relative_project_root) = project_root.strip_prefix(output_parent) {
+        Ok(path_to_slash(relative_project_root))
+    } else {
+        Ok(path_to_slash(&project_root))
+    }
+}
+
+fn normalize_lexical(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
+}
+
+fn path_to_slash(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 fn init_command(config_path: &Path) -> String {
@@ -584,8 +743,10 @@ fn codex_agent_instructions(config: &str) -> String {
 - Run `devimg doctor --config {config}` before editing source images, `devimg.toml`, generated variants, manifests, reports, or app image helper files.
 - After image source or config changes, run `devimg optimize --config {config} --allow-overwrite`.
 - If the project checks in a manifest helper, regenerate it with `devimg manifest export`.
+- When crop or quality needs visual review, run `devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html`.
 - Run `devimg check --config {config}` before finishing.
 - Run `devimg doctor --config {config}` again to confirm the project is healthy.
+- Treat `quality_warning` output as a review signal; do not silently auto-tune config without user approval.
 - Commit generated image variants, `devimg-manifest.json`, `devimg-report.md`, and checked-in manifest helper files together.
 - Do not edit generated image variants, manifests, reports, or generated helper modules by hand.
 - Do not overwrite existing agent instruction files or skills without explicit user approval.
@@ -596,6 +757,7 @@ Recommended loop:
 devimg doctor --config {config}
 devimg optimize --config {config} --allow-overwrite
 devimg manifest export --manifest public/images/devimg-manifest.json --strip-prefix public --url-prefix / --format typescript --output lib/devimg.generated.ts
+devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html
 devimg check --config {config}
 devimg doctor --config {config} --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 ```
@@ -614,7 +776,9 @@ Use these instructions when working with generated web image assets.
 - Start with `devimg doctor --config {config}` before changing source images, `devimg.toml`, generated variants, manifests, reports, or app image helper files.
 - Regenerate outputs with `devimg optimize --config {config} --allow-overwrite` after image source or config changes.
 - Regenerate checked-in manifest helpers with `devimg manifest export` when the project uses them.
+- Run `devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html` when crop or quality needs visual review.
 - Validate with `devimg check --config {config}` and then run `devimg doctor --config {config}` again.
+- Treat `quality_warning` output as a review signal; do not silently auto-tune config without user approval.
 - Commit generated image variants, `devimg-manifest.json`, `devimg-report.md`, and checked-in manifest helper files together.
 - Never hand-edit generated image variants, manifests, reports, or generated helper modules.
 - Never overwrite existing agent instruction files, Claude commands, or Codex skills without explicit user approval.
@@ -625,6 +789,7 @@ Recommended loop:
 devimg doctor --config {config}
 devimg optimize --config {config} --allow-overwrite
 devimg manifest export --manifest public/images/devimg-manifest.json --strip-prefix public --url-prefix / --format typescript --output lib/devimg.generated.ts
+devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html
 devimg check --config {config}
 devimg doctor --config {config} --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 ```
@@ -648,13 +813,15 @@ Steps:
 1. Run `devimg doctor --config <config>`.
 2. If source images or config changed, run `devimg optimize --config <config> --allow-overwrite`.
 3. If the project checks in a manifest helper, run `devimg manifest export` with the project manifest/helper paths.
-4. Run `devimg check --config <config>`.
-5. Run `devimg doctor --config <config>` again.
+4. If crop or quality needs visual review, run `devimg review --manifest <manifest> --output .devimg/review.html`.
+5. Run `devimg check --config <config>`.
+6. Run `devimg doctor --config <config>` again.
 
 Rules:
 
 - Do not hand-edit generated variants, manifests, reports, or helper modules.
 - Do not overwrite existing agent instruction files, Claude commands, or Codex skills without explicit user approval.
+- Treat `quality_warning` output as a review signal; do not silently auto-tune config without user approval.
 - Report changed generated files and verification results.
 "#
     )

@@ -7,6 +7,10 @@ use crate::config::{
 };
 use crate::hash::hash_bytes;
 use crate::pipeline::{path_to_string, Operation, Plan, SourceImage};
+use crate::quality::{
+    allowed_upscale_warning, append_unique, cover_crop_warning, lossy_quality_warnings,
+    skipped_upscale_warning,
+};
 use crate::scan::compile_globs;
 use crate::{DevimgError, Result};
 
@@ -31,18 +35,42 @@ pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
                 if !effective_preset.allow_upscale
                     && (target_width > source.width || target_height > source.height)
                 {
-                    warnings.push(format!(
-                        "skipped {} preset {} width {} because it would require upscaling from {}x{} to {}x{}",
-                        source.project_path,
-                        effective_preset.name,
-                        width,
-                        source.width,
-                        source.height,
-                        target_width,
-                        target_height
-                    ));
+                    append_unique(
+                        &mut warnings,
+                        [skipped_upscale_warning(
+                            source,
+                            &effective_preset,
+                            *width,
+                            target_width,
+                            target_height,
+                        )],
+                    );
                     continue;
                 }
+                append_unique(
+                    &mut warnings,
+                    lossy_quality_warnings(source, &effective_preset),
+                );
+                append_unique(
+                    &mut warnings,
+                    allowed_upscale_warning(
+                        source,
+                        &effective_preset,
+                        *width,
+                        target_width,
+                        target_height,
+                    ),
+                );
+                append_unique(
+                    &mut warnings,
+                    cover_crop_warning(
+                        source,
+                        &effective_preset,
+                        *width,
+                        target_width,
+                        target_height,
+                    ),
+                );
                 for format in &effective_preset.formats {
                     let output_path = output_path_for(source, &effective_preset, *width, *format)?;
                     if output_path == source.path {
