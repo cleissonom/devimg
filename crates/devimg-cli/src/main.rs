@@ -4,12 +4,13 @@ use std::path::{Path, PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use devimg_core::{
-    check, compare_manifests, doctor, doctor_report_to_json, inspect_image, load_config,
-    manifest_compare_to_json, manifest_export_to_json, manifest_export_to_typescript, optimize,
-    read_manifest, render_doctor_report, render_manifest_compare_report, render_manifest_report,
-    render_manifest_review, render_run_report, DevimgError, DoctorManifestExportFormat,
+    check_with_options, compare_manifests, doctor, doctor_report_to_json, inspect_image,
+    load_config, manifest_compare_to_json, manifest_export_to_json,
+    manifest_export_to_typescript_with_options, optimize, read_manifest, render_doctor_report,
+    render_manifest_compare_report, render_manifest_report, render_manifest_review,
+    render_run_report, CheckOptions, DevimgError, DoctorManifestExportFormat,
     DoctorManifestExportOptions, DoctorOptions, ManifestCompareOptions, ManifestExportOptions,
-    ManifestReviewOptions, OptimizeOptions,
+    ManifestReviewOptions, ManifestTypescriptOptions, OptimizeOptions,
 };
 
 fn main() {
@@ -75,8 +76,8 @@ where
 #[derive(Debug, Parser)]
 #[command(
     name = "devimg",
+    version,
     about = "Developer image pipeline",
-    disable_version_flag = true,
     subcommand_required = true,
     arg_required_else_help = false,
     color = clap::ColorChoice::Never
@@ -135,6 +136,8 @@ struct CheckArgs {
     config: PathBuf,
     #[arg(long)]
     fail_on_warning: bool,
+    #[arg(long)]
+    no_report: bool,
 }
 
 #[derive(Debug, Args)]
@@ -151,6 +154,8 @@ struct DoctorArgs {
     strip_prefix: Option<String>,
     #[arg(long, default_value = "")]
     url_prefix: String,
+    #[arg(long)]
+    typescript_helpers: bool,
 }
 
 #[derive(Debug, Args)]
@@ -225,6 +230,8 @@ struct ManifestExportArgs {
     url_prefix: String,
     #[arg(long)]
     check: bool,
+    #[arg(long)]
+    typescript_helpers: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -290,7 +297,12 @@ fn command_optimize(args: OptimizeArgs) -> Result<(), CliError> {
 
 fn command_check(args: CheckArgs) -> Result<(), CliError> {
     let config = load_config(&args.config)?;
-    let mut result = check(&config)?;
+    let mut result = check_with_options(
+        &config,
+        CheckOptions {
+            write_report: !args.no_report,
+        },
+    )?;
     if args.fail_on_warning && !result.result.warnings.is_empty() {
         result.passed = false;
     }
@@ -305,9 +317,16 @@ fn command_check(args: CheckArgs) -> Result<(), CliError> {
 
 fn command_doctor(args: DoctorArgs) -> Result<(), CliError> {
     let config = load_config(&args.config)?;
-    let manifest_export = args
-        .export_output
-        .map(|output| DoctorManifestExportOptions {
+    let manifest_export = if let Some(output) = args.export_output {
+        if args.typescript_helpers
+            && !matches!(args.export_format, ManifestExportFormat::Typescript)
+        {
+            return Err(CliError::Core(DevimgError::config(
+                &args.config,
+                "--typescript-helpers requires --export-format typescript",
+            )));
+        }
+        Some(DoctorManifestExportOptions {
             output,
             format: match args.export_format {
                 ManifestExportFormat::Json => DoctorManifestExportFormat::Json,
@@ -315,7 +334,17 @@ fn command_doctor(args: DoctorArgs) -> Result<(), CliError> {
             },
             strip_prefix: args.strip_prefix,
             url_prefix: args.url_prefix,
-        });
+            typescript_helpers: args.typescript_helpers,
+        })
+    } else {
+        if args.typescript_helpers {
+            return Err(CliError::Core(DevimgError::config(
+                &args.config,
+                "--typescript-helpers requires --export-output",
+            )));
+        }
+        None
+    };
     let report = doctor(&config, DoctorOptions { manifest_export })?;
     let rendered = if args.json {
         doctor_report_to_json(&report)
@@ -465,6 +494,12 @@ fn command_agent_init(args: AgentInitArgs) -> Result<(), CliError> {
 }
 
 fn command_manifest_export(args: ManifestExportArgs) -> Result<(), CliError> {
+    if args.typescript_helpers && !matches!(args.format, ManifestExportFormat::Typescript) {
+        return Err(CliError::Core(DevimgError::config(
+            &args.manifest,
+            "--typescript-helpers requires --format typescript",
+        )));
+    }
     let manifest = read_manifest(&args.manifest)?;
     let options = ManifestExportOptions {
         strip_prefix: args.strip_prefix.clone(),
@@ -472,7 +507,13 @@ fn command_manifest_export(args: ManifestExportArgs) -> Result<(), CliError> {
     };
     let rendered = match args.format {
         ManifestExportFormat::Json => manifest_export_to_json(&manifest, &options),
-        ManifestExportFormat::Typescript => manifest_export_to_typescript(&manifest, &options),
+        ManifestExportFormat::Typescript => manifest_export_to_typescript_with_options(
+            &manifest,
+            &options,
+            &ManifestTypescriptOptions {
+                include_helpers: args.typescript_helpers,
+            },
+        ),
     };
 
     if args.check {
@@ -565,6 +606,9 @@ fn manifest_export_write_command(args: &ManifestExportArgs, output: &Path) -> St
     }
     if !args.url_prefix.is_empty() {
         command.push_str(&format!(" --url-prefix {}", shell_arg(&args.url_prefix)));
+    }
+    if args.typescript_helpers {
+        command.push_str(" --typescript-helpers");
     }
     command.push_str(&format!(" --output {}", shell_arg_path(output)));
     command
@@ -743,10 +787,12 @@ fn codex_agent_instructions(config: &str) -> String {
 - Run `devimg doctor --config {config}` before editing source images, `devimg.toml`, generated variants, manifests, reports, or app image helper files.
 - After image source or config changes, run `devimg optimize --config {config} --allow-overwrite`.
 - If the project checks in a manifest helper, regenerate it with `devimg manifest export`.
+- If that helper was generated with `--typescript-helpers`, use the same flag for regeneration and drift checks.
 - When crop or quality needs visual review, run `devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html`.
 - Run `devimg check --config {config}` before finishing.
 - Run `devimg doctor --config {config}` again to confirm the project is healthy.
 - Treat `quality_warning` output as a review signal; do not silently auto-tune config without user approval.
+- If this repository has `docs/agent-contract.md`, follow it as the DevImg file ownership policy.
 - Commit generated image variants, `devimg-manifest.json`, `devimg-report.md`, and checked-in manifest helper files together.
 - Do not edit generated image variants, manifests, reports, or generated helper modules by hand.
 - Do not overwrite existing agent instruction files or skills without explicit user approval.
@@ -762,7 +808,7 @@ devimg check --config {config}
 devimg doctor --config {config} --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 ```
 
-If the project uses different manifest or helper paths, inspect `{config}` and adjust the manifest export command before running it.
+If the project uses different manifest or helper paths, inspect `{config}` and adjust the manifest export command before running it. Keep `--typescript-helpers` only when the checked-in TypeScript helper uses the generated lookup functions.
 "#
     )
 }
@@ -776,9 +822,11 @@ Use these instructions when working with generated web image assets.
 - Start with `devimg doctor --config {config}` before changing source images, `devimg.toml`, generated variants, manifests, reports, or app image helper files.
 - Regenerate outputs with `devimg optimize --config {config} --allow-overwrite` after image source or config changes.
 - Regenerate checked-in manifest helpers with `devimg manifest export` when the project uses them.
+- Include `--typescript-helpers` when the checked-in TypeScript helper uses generated lookup functions.
 - Run `devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html` when crop or quality needs visual review.
 - Validate with `devimg check --config {config}` and then run `devimg doctor --config {config}` again.
 - Treat `quality_warning` output as a review signal; do not silently auto-tune config without user approval.
+- If this repository has `docs/agent-contract.md`, follow it as the DevImg file ownership policy.
 - Commit generated image variants, `devimg-manifest.json`, `devimg-report.md`, and checked-in manifest helper files together.
 - Never hand-edit generated image variants, manifests, reports, or generated helper modules.
 - Never overwrite existing agent instruction files, Claude commands, or Codex skills without explicit user approval.
@@ -794,7 +842,7 @@ devimg check --config {config}
 devimg doctor --config {config} --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 ```
 
-If this project uses a different manifest path or does not check in a generated helper, inspect `{config}` and adjust or skip the manifest export step.
+If this project uses a different manifest path or does not check in a generated helper, inspect `{config}` and adjust or skip the manifest export step. Keep `--typescript-helpers` only when the checked-in TypeScript helper uses the generated lookup functions.
 "#
     )
 }
@@ -812,7 +860,7 @@ Steps:
 
 1. Run `devimg doctor --config <config>`.
 2. If source images or config changed, run `devimg optimize --config <config> --allow-overwrite`.
-3. If the project checks in a manifest helper, run `devimg manifest export` with the project manifest/helper paths.
+3. If the project checks in a manifest helper, run `devimg manifest export` with the project manifest/helper paths, including `--typescript-helpers` only when that helper uses generated lookup functions.
 4. If crop or quality needs visual review, run `devimg review --manifest <manifest> --output .devimg/review.html`.
 5. Run `devimg check --config <config>`.
 6. Run `devimg doctor --config <config>` again.
@@ -822,6 +870,7 @@ Rules:
 - Do not hand-edit generated variants, manifests, reports, or helper modules.
 - Do not overwrite existing agent instruction files, Claude commands, or Codex skills without explicit user approval.
 - Treat `quality_warning` output as a review signal; do not silently auto-tune config without user approval.
+- If this repository has `docs/agent-contract.md`, follow it as the DevImg file ownership policy.
 - Report changed generated files and verification results.
 "#
     )

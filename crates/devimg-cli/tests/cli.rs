@@ -10,6 +10,9 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["doctor", "--help"]), 0);
     assert_code(run(["compare", "--help"]), 0);
     assert_code(run(["review", "--help"]), 0);
+    let version = run(["--version"]);
+    assert_status(&version, 0);
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.10"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -55,6 +58,54 @@ fn optimize_and_check_success() {
     assert!(project.join("devimg-report.md").exists());
 
     assert_code(run(["check", "--config", config.as_str()]), 0);
+    cleanup(&project);
+}
+
+#[test]
+fn check_no_report_keeps_report_path_read_only() {
+    let project = fixture_project("check_no_report", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    let report = project.join("devimg-report.md");
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    fs::remove_file(&report).expect("remove optimize report");
+
+    let output = run(["check", "--config", config.as_str(), "--no-report"]);
+
+    assert_status(&output, 0);
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Dev Image Pipeline Report"));
+    assert!(!report.exists());
+    cleanup(&project);
+}
+
+#[test]
+fn optimize_reports_incremental_skips_and_stale_work() {
+    let project = fixture_project("incremental_report", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    let first = run(["optimize", "--config", config.as_str()]);
+    assert_status(&first, 0);
+    let first_stdout = String::from_utf8_lossy(&first.stdout);
+    assert!(first_stdout.contains("- Variants generated: `1`"));
+    assert!(!first_stdout.contains("- Variants skipped:"));
+
+    let second = run(["optimize", "--config", config.as_str()]);
+    assert_status(&second, 0);
+    let second_stdout = String::from_utf8_lossy(&second.stdout);
+    assert!(second_stdout.contains("- Variants generated: `0`"));
+    assert!(second_stdout.contains("- Variants skipped: `1`"));
+    assert!(second_stdout.contains("- Manifest variants: `1`"));
+    let report = fs::read_to_string(project.join("devimg-report.md")).expect("report reads");
+    assert!(report.contains("- Variants skipped: `1`"));
+
+    write_project_config(&project, 64, "", r#"max_total_bytes = "4mb""#);
+    let stale = run(["optimize", "--config", config.as_str()]);
+    assert_status(&stale, 0);
+    let stale_stdout = String::from_utf8_lossy(&stale.stdout);
+    assert!(stale_stdout.contains("- Variants generated: `1`"));
+    assert!(stale_stdout.contains("- Variants stale: `1`"));
+    assert!(!stale_stdout.contains("- Variants skipped:"));
+
     cleanup(&project);
 }
 
@@ -190,6 +241,7 @@ fn doctor_detects_manifest_export_drift() {
             "public",
             "--url-prefix",
             "/",
+            "--typescript-helpers",
             "--output",
             generated_arg.as_str(),
         ]),
@@ -209,6 +261,7 @@ fn doctor_detects_manifest_export_drift() {
             "public",
             "--url-prefix",
             "/",
+            "--typescript-helpers",
         ]),
         0,
     );
@@ -227,6 +280,7 @@ fn doctor_detects_manifest_export_drift() {
         "public",
         "--url-prefix",
         "/",
+        "--typescript-helpers",
     ]);
 
     assert_status(&output, 3);
@@ -242,6 +296,102 @@ fn doctor_detects_manifest_export_drift() {
         "stale\n"
     );
     cleanup(&project);
+}
+
+#[test]
+fn doctor_reports_framework_diagnostics() {
+    let next = fixture_project("doctor_framework_next", "sample.png");
+    write_package_json(&next, r#"{"dependencies":{"next":"15.0.0"}}"#);
+    fs::write(next.join("next.config.js"), "module.exports = {}\n").expect("next config writes");
+    let next_config = path_arg(next.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", next_config.as_str()]), 0);
+    let next_output = run(["doctor", "--config", next_config.as_str(), "--json"]);
+    assert_status(&next_output, 0);
+    let next_document: serde_json::Value =
+        serde_json::from_slice(&next_output.stdout).expect("next doctor JSON parses");
+    assert_json_array_contains(&next_document["frameworks"], "next");
+    assert_diagnostic_code(
+        &next_document["warnings"],
+        "framework_next_image_double_optimization",
+    );
+    assert_diagnostic_code(&next_document["warnings"], "framework_cache_without_hash");
+    cleanup(&next);
+
+    let astro = fixture_project_with_project_settings(
+        "doctor_framework_astro",
+        "sample.png",
+        "content_hash_filenames = true",
+        r#"max_total_bytes = "5mb""#,
+    );
+    write_package_json(&astro, r#"{"devDependencies":{"astro":"5.0.0"}}"#);
+    let astro_config = path_arg(astro.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", astro_config.as_str()]), 0);
+    let astro_output = run(["doctor", "--config", astro_config.as_str(), "--json"]);
+    assert_status(&astro_output, 0);
+    let astro_document: serde_json::Value =
+        serde_json::from_slice(&astro_output.stdout).expect("astro doctor JSON parses");
+    assert_json_array_contains(&astro_document["frameworks"], "astro");
+    assert_diagnostic_code(
+        &astro_document["warnings"],
+        "framework_manifest_export_missing",
+    );
+    cleanup(&astro);
+
+    let vite = fixture_project("doctor_framework_vite", "sample.png");
+    fs::write(vite.join("vite.config.ts"), "export default {}\n").expect("vite config writes");
+    let vite_config = path_arg(vite.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", vite_config.as_str()]), 0);
+    let vite_output = run(["doctor", "--config", vite_config.as_str(), "--json"]);
+    assert_status(&vite_output, 0);
+    let vite_document: serde_json::Value =
+        serde_json::from_slice(&vite_output.stdout).expect("vite doctor JSON parses");
+    assert_json_array_contains(&vite_document["frameworks"], "vite");
+    cleanup(&vite);
+}
+
+#[test]
+fn doctor_framework_detection_handles_none_and_mixed_projects() {
+    let plain = fixture_project("doctor_framework_none", "sample.png");
+    let plain_config = path_arg(plain.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", plain_config.as_str()]), 0);
+    let plain_output = run(["doctor", "--config", plain_config.as_str(), "--json"]);
+    assert_status(&plain_output, 0);
+    let plain_document: serde_json::Value =
+        serde_json::from_slice(&plain_output.stdout).expect("plain doctor JSON parses");
+    assert!(plain_document["frameworks"]
+        .as_array()
+        .expect("frameworks array")
+        .is_empty());
+    assert!(!plain_document["warnings"]
+        .as_array()
+        .expect("warnings array")
+        .iter()
+        .any(|warning| warning["code"]
+            .as_str()
+            .expect("warning code")
+            .starts_with("framework_")));
+    cleanup(&plain);
+
+    let mixed = fixture_project("doctor_framework_mixed", "sample.png");
+    write_package_json(
+        &mixed,
+        r#"{"dependencies":{"next":"15.0.0"},"devDependencies":{"vite":"7.0.0"}}"#,
+    );
+    let mixed_config = path_arg(mixed.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", mixed_config.as_str()]), 0);
+    let mixed_output = run(["doctor", "--config", mixed_config.as_str(), "--json"]);
+    assert_status(&mixed_output, 0);
+    let mixed_document: serde_json::Value =
+        serde_json::from_slice(&mixed_output.stdout).expect("mixed doctor JSON parses");
+    assert_json_array_contains(&mixed_document["frameworks"], "next");
+    assert_json_array_contains(&mixed_document["frameworks"], "vite");
+    assert_diagnostic_code(&mixed_document["warnings"], "framework_multiple_detected");
+    cleanup(&mixed);
 }
 
 #[test]
@@ -412,6 +562,33 @@ fn manifest_export_outputs_app_mapping() {
     assert!(typescript.starts_with("// Generated by devimg."));
     assert!(typescript.contains("export const DEVIMG_MANIFEST = {"));
     assert!(typescript.contains("src: \"/images/generated/sample.project-card.64.webp\""));
+    assert!(!typescript.contains("findDevimgVariant"));
+
+    let helpers = project.join("lib/devimg.helpers.ts");
+    let helpers_arg = path_arg(helpers.clone());
+    assert_code(
+        run([
+            "manifest",
+            "export",
+            "--manifest",
+            manifest.as_str(),
+            "--format",
+            "typescript",
+            "--strip-prefix",
+            "public",
+            "--url-prefix",
+            "/",
+            "--typescript-helpers",
+            "--output",
+            helpers_arg.as_str(),
+        ]),
+        0,
+    );
+    let helper_typescript = fs::read_to_string(&helpers).expect("generated helpers read");
+    assert!(helper_typescript.contains("export type DevimgVariantSelector = {"));
+    assert!(helper_typescript.contains("export function findDevimgSource"));
+    assert!(helper_typescript.contains("export function listDevimgVariants"));
+    assert!(helper_typescript.contains("export function findDevimgVariant"));
 
     let check_current = run([
         "manifest",
@@ -430,6 +607,35 @@ fn manifest_export_outputs_app_mapping() {
     ]);
     assert_status(&check_current, 0);
     assert!(String::from_utf8_lossy(&check_current.stdout).contains("is up to date"));
+
+    let check_helpers_current = run([
+        "manifest",
+        "export",
+        "--manifest",
+        manifest.as_str(),
+        "--format",
+        "typescript",
+        "--strip-prefix",
+        "public",
+        "--url-prefix",
+        "/",
+        "--typescript-helpers",
+        "--output",
+        helpers_arg.as_str(),
+        "--check",
+    ]);
+    assert_status(&check_helpers_current, 0);
+
+    let helper_json_error = run([
+        "manifest",
+        "export",
+        "--manifest",
+        manifest.as_str(),
+        "--typescript-helpers",
+    ]);
+    assert_status(&helper_json_error, 2);
+    assert!(String::from_utf8_lossy(&helper_json_error.stderr)
+        .contains("--typescript-helpers requires --format typescript"));
 
     fs::write(&generated, "stale\n").expect("write stale generated module");
     let check_stale = run([
@@ -543,6 +749,125 @@ fn review_writes_visual_artifact_and_refuses_unsafe_overwrite() {
     assert!(fs::read_to_string(&review)
         .expect("forced review artifact reads")
         .contains("Generated image variants"));
+    cleanup(&project);
+}
+
+#[test]
+fn dogfood_example_flow_covers_frontend_assets() {
+    let project = temp_project("dogfood_example");
+    copy_dir_all(&repo_root().join("examples/dogfood"), &project);
+    remove_dir_if_exists(&project.join("public"));
+    remove_dir_if_exists(&project.join("lib"));
+    remove_dir_if_exists(&project.join(".devimg"));
+    remove_file_if_exists(&project.join("devimg-report.md"));
+    let config = path_arg(project.join("devimg.toml"));
+    let manifest_path = project.join("public/images/devimg-manifest.json");
+    let manifest = path_arg(manifest_path.clone());
+    let helper = path_arg(project.join("lib/devimg.generated.ts"));
+    let review = project.join(".devimg/review.html");
+    let review_arg = path_arg(review.clone());
+
+    let missing = run(["doctor", "--config", config.as_str(), "--json"]);
+    assert_status(&missing, 3);
+    let missing_json: serde_json::Value =
+        serde_json::from_slice(&missing.stdout).expect("missing doctor JSON parses");
+    assert_diagnostic_code(&missing_json["issues"], "missing_manifest");
+    assert!(!manifest_path.exists());
+
+    assert_code(
+        run(["optimize", "--config", config.as_str(), "--dry-run"]),
+        0,
+    );
+    assert!(!manifest_path.exists());
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    assert_code(run(["check", "--config", config.as_str()]), 0);
+
+    let manifest_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&manifest_path).expect("manifest reads"))
+            .expect("manifest JSON parses");
+    let outputs = manifest_json["outputs"]
+        .as_array()
+        .expect("manifest outputs are an array");
+    assert!(outputs.iter().any(|output| {
+        output["source_path"] == "assets/images/logos/devimg-mark.png"
+            && output["preset"] == "logo-contain"
+            && output["fit"] == "contain"
+    }));
+    assert!(outputs.iter().any(|output| {
+        output["output_path"]
+            .as_str()
+            .expect("output path is string")
+            .contains(".project-card.640.")
+    }));
+
+    assert_code(
+        run([
+            "manifest",
+            "export",
+            "--manifest",
+            manifest.as_str(),
+            "--format",
+            "typescript",
+            "--strip-prefix",
+            "public",
+            "--url-prefix",
+            "/",
+            "--typescript-helpers",
+            "--output",
+            helper.as_str(),
+        ]),
+        0,
+    );
+    assert_code(
+        run([
+            "manifest",
+            "export",
+            "--manifest",
+            manifest.as_str(),
+            "--format",
+            "typescript",
+            "--strip-prefix",
+            "public",
+            "--url-prefix",
+            "/",
+            "--typescript-helpers",
+            "--output",
+            helper.as_str(),
+            "--check",
+        ]),
+        0,
+    );
+    assert_code(
+        run([
+            "doctor",
+            "--config",
+            config.as_str(),
+            "--export-output",
+            helper.as_str(),
+            "--export-format",
+            "typescript",
+            "--strip-prefix",
+            "public",
+            "--url-prefix",
+            "/",
+            "--typescript-helpers",
+        ]),
+        0,
+    );
+    assert_code(
+        run([
+            "review",
+            "--manifest",
+            manifest.as_str(),
+            "--output",
+            review_arg.as_str(),
+        ]),
+        0,
+    );
+    let html = fs::read_to_string(&review).expect("review artifact reads");
+    assert!(html.contains("assets/images/social/open-graph.png"));
+    assert!(html.contains("logo-contain"));
     cleanup(&project);
 }
 
@@ -906,6 +1231,7 @@ fn agent_init_creates_codex_claude_and_both_targets_safely() {
     assert!(agents_text.contains("devimg optimize --config devimg.toml --allow-overwrite"));
     assert!(agents_text.contains("devimg manifest export"));
     assert!(agents_text.contains("devimg check --config devimg.toml"));
+    assert!(agents_text.contains("docs/agent-contract.md"));
     assert!(agents_text.contains("Do not edit generated"));
     cleanup(&codex_project);
 
@@ -1046,6 +1372,28 @@ fn assert_status(output: &Output, expected: i32) {
     );
 }
 
+fn assert_json_array_contains(value: &serde_json::Value, expected: &str) {
+    assert!(
+        value
+            .as_array()
+            .expect("JSON value is an array")
+            .iter()
+            .any(|entry| entry == expected),
+        "expected array to contain {expected}, got {value}"
+    );
+}
+
+fn assert_diagnostic_code(value: &serde_json::Value, expected: &str) {
+    assert!(
+        value
+            .as_array()
+            .expect("diagnostics value is an array")
+            .iter()
+            .any(|entry| entry["code"] == expected),
+        "expected diagnostics to contain {expected}, got {value}"
+    );
+}
+
 fn fixture_project(label: &str, source_name: &str) -> PathBuf {
     fixture_project_with_budget(label, source_name, r#"max_total_bytes = "5mb""#)
 }
@@ -1108,6 +1456,10 @@ fn fixture_image() -> PathBuf {
     repo_root().join("fixtures/images/sample.png")
 }
 
+fn write_package_json(project: &Path, contents: &str) {
+    fs::write(project.join("package.json"), contents).expect("write package.json");
+}
+
 fn single_generated_webp(project: &Path) -> PathBuf {
     let generated = project.join("public/images/generated");
     fs::read_dir(generated)
@@ -1135,6 +1487,32 @@ fn temp_project(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!("devimg_cli_{label}_{}_{}", std::process::id(), now));
     fs::create_dir_all(&path).expect("create temp project");
     path
+}
+
+fn copy_dir_all(from: &Path, to: &Path) {
+    fs::create_dir_all(to).expect("create destination dir");
+    for entry in fs::read_dir(from).expect("read source dir") {
+        let entry = entry.expect("source dir entry");
+        let file_type = entry.file_type().expect("entry file type");
+        let destination = to.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_all(&entry.path(), &destination);
+        } else {
+            fs::copy(entry.path(), destination).expect("copy file");
+        }
+    }
+}
+
+fn remove_dir_if_exists(path: &Path) {
+    if path.exists() {
+        fs::remove_dir_all(path).expect("remove dir");
+    }
+}
+
+fn remove_file_if_exists(path: &Path) {
+    if path.exists() {
+        fs::remove_file(path).expect("remove file");
+    }
 }
 
 fn path_arg(path: PathBuf) -> String {

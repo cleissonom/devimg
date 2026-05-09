@@ -3,8 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::budget::evaluate_budgets;
-pub use crate::check::{check, CheckOptions};
+pub use crate::check::{check, check_with_options, CheckOptions};
 use crate::config::{resolve_project_path_checked, Config, CropPosition, FitMode, FormatKind};
+use crate::incremental::{IncrementalCache, IncrementalLookup};
 use crate::manifest::{write_manifest, Manifest};
 pub use crate::plan::build_plan;
 use crate::quality::{append_unique, manifest_quality_warnings};
@@ -61,6 +62,9 @@ pub struct OptimizeResult {
     pub mode: String,
     pub source_count: usize,
     pub planned_count: usize,
+    pub generated_count: usize,
+    pub skipped_count: usize,
+    pub stale_count: usize,
     pub source_bytes: u64,
     pub output_bytes: u64,
     pub warnings: Vec<String>,
@@ -108,6 +112,9 @@ pub fn optimize(config: &Config, options: OptimizeOptions) -> Result<OptimizeRes
             mode,
             source_count: sources.len(),
             planned_count: plan.operations.len(),
+            generated_count: 0,
+            skipped_count: 0,
+            stale_count: 0,
             source_bytes,
             output_bytes: 0,
             warnings: plan.warnings,
@@ -128,11 +135,28 @@ pub fn optimize(config: &Config, options: OptimizeOptions) -> Result<OptimizeRes
 
     let mut outputs = Vec::new();
     let mut warnings = plan.warnings;
+    let incremental_cache = IncrementalCache::read(config, &manifest_path);
+    let mut generated_count = 0usize;
+    let mut skipped_count = 0usize;
+    let mut stale_count = 0usize;
     for operation in &plan.operations {
+        if let Some(cache) = &incremental_cache {
+            match cache.lookup_current(config, operation)? {
+                IncrementalLookup::Current(output) => {
+                    skipped_count += 1;
+                    outputs.push(*output);
+                    continue;
+                }
+                IncrementalLookup::Stale => {
+                    stale_count += 1;
+                }
+            }
+        }
         outputs.push(execute_operation(
             operation,
             config.project.overwrite || options.allow_overwrite,
         )?);
+        generated_count += 1;
     }
 
     let manifest = Manifest::new(
@@ -154,6 +178,9 @@ pub fn optimize(config: &Config, options: OptimizeOptions) -> Result<OptimizeRes
         mode,
         source_count: sources.len(),
         planned_count: plan.operations.len(),
+        generated_count,
+        skipped_count,
+        stale_count,
         source_bytes,
         output_bytes,
         warnings,
@@ -254,8 +281,114 @@ mod tests {
         .expect("dry-run succeeds");
 
         assert_eq!(result.planned_count, 2);
+        assert_eq!(result.generated_count, 0);
+        assert_eq!(result.skipped_count, 0);
+        assert_eq!(result.stale_count, 0);
         assert!(!project.join("public/images/devimg-manifest.json").exists());
         assert!(!project.join("devimg-report.md").exists());
+        cleanup(&project);
+    }
+
+    #[test]
+    fn optimize_skips_current_stable_outputs() {
+        let project = temp_project("stable_incremental");
+        write_image(&project.join("assets/images/card.png"), 800, 450);
+        write_config(&project, r#"max_total_bytes = "5mb""#);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        let first = optimize(&config, OptimizeOptions::default()).expect("first optimize succeeds");
+        let second =
+            optimize(&config, OptimizeOptions::default()).expect("second optimize succeeds");
+
+        assert_eq!(first.generated_count, 2);
+        assert_eq!(first.skipped_count, 0);
+        assert_eq!(second.generated_count, 0);
+        assert_eq!(second.skipped_count, 2);
+        assert_eq!(second.stale_count, 0);
+        assert!(check(&config).expect("check runs").passed);
+        cleanup(&project);
+    }
+
+    #[test]
+    fn optimize_skips_current_content_hash_outputs() {
+        let project = temp_project("hash_incremental");
+        write_image(&project.join("assets/images/card.png"), 800, 450);
+        write_hashed_config_with_width(&project, 640, r#"max_total_bytes = "5mb""#);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        let first = optimize(&config, OptimizeOptions::default()).expect("first optimize succeeds");
+        let second =
+            optimize(&config, OptimizeOptions::default()).expect("second optimize succeeds");
+
+        assert_eq!(first.generated_count, 2);
+        assert_eq!(first.skipped_count, 0);
+        assert_eq!(second.generated_count, 0);
+        assert_eq!(second.skipped_count, 2);
+        assert_eq!(second.stale_count, 0);
+        assert!(check(&config).expect("check runs").passed);
+        cleanup(&project);
+    }
+
+    #[test]
+    fn optimize_regenerates_missing_output_and_skips_current_outputs() {
+        let project = temp_project("missing_incremental");
+        write_image(&project.join("assets/images/card.png"), 800, 450);
+        write_config(&project, r#"max_total_bytes = "5mb""#);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        optimize(&config, OptimizeOptions::default()).expect("first optimize succeeds");
+        fs::remove_file(project.join("public/images/generated/card.project-card.640.webp"))
+            .expect("output removed");
+
+        let result = optimize(&config, OptimizeOptions::default()).expect("optimize succeeds");
+
+        assert_eq!(result.generated_count, 1);
+        assert_eq!(result.skipped_count, 1);
+        assert_eq!(result.stale_count, 1);
+        assert!(check(&config).expect("check runs").passed);
+        cleanup(&project);
+    }
+
+    #[test]
+    fn optimize_does_not_skip_after_config_hash_changes() {
+        let project = temp_project("config_stale_incremental");
+        write_image(&project.join("assets/images/card.png"), 800, 450);
+        write_config(&project, r#"max_total_bytes = "5mb""#);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        optimize(&config, OptimizeOptions::default()).expect("first optimize succeeds");
+        write_config(&project, r#"max_total_bytes = "4mb""#);
+        let changed_config = load_config(project.join("devimg.toml")).expect("config reloads");
+
+        let result =
+            optimize(&changed_config, OptimizeOptions::default()).expect("optimize succeeds");
+
+        assert_eq!(result.generated_count, 2);
+        assert_eq!(result.skipped_count, 0);
+        assert_eq!(result.stale_count, 2);
+        assert!(check(&changed_config).expect("check runs").passed);
+        cleanup(&project);
+    }
+
+    #[test]
+    fn content_hash_optimize_regenerates_after_source_changes() {
+        let project = temp_project("source_stale_incremental");
+        let source = project.join("assets/images/card.png");
+        write_image(&source, 800, 450);
+        write_hashed_config_with_width(&project, 640, r#"max_total_bytes = "5mb""#);
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        optimize(&config, OptimizeOptions::default()).expect("first optimize succeeds");
+        write_image(&source, 900, 450);
+        let changed_config = load_config(project.join("devimg.toml")).expect("config reloads");
+
+        let result =
+            optimize(&changed_config, OptimizeOptions::default()).expect("optimize succeeds");
+
+        assert_eq!(result.generated_count, 2);
+        assert_eq!(result.skipped_count, 0);
+        assert_eq!(result.stale_count, 2);
+        assert!(check(&changed_config).expect("check runs").passed);
         cleanup(&project);
     }
 

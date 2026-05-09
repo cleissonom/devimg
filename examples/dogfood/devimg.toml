@@ -1,0 +1,57 @@
+[project]
+root = "."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+overwrite = false
+strip_metadata = true
+content_hash_filenames = true
+
+[[sources]]
+name = "dogfood-assets"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.webp"]
+exclude = ["**/generated/**"]
+
+[[preset]]
+name = "project-card"
+widths = [320, 640]
+formats = ["webp", "jpeg"]
+quality = 90
+fit = "cover"
+aspect_ratio = "16:9"
+crop = "top"
+allow_upscale = false
+
+[[preset]]
+name = "open-graph"
+widths = [640]
+formats = ["webp", "jpeg"]
+quality = 92
+fit = "cover"
+aspect_ratio = "1200:630"
+crop = { x = 0.5, y = 0.25 }
+allow_upscale = false
+
+[[preset]]
+name = "logo-contain"
+widths = [160, 320]
+formats = ["png", "webp"]
+quality = 92
+fit = "contain"
+aspect_ratio = "1:1"
+allow_upscale = false
+
+[[preset]]
+name = "screenshot"
+widths = [640]
+formats = ["webp", "jpeg"]
+quality = 90
+fit = "contain"
+aspect_ratio = "16:10"
+allow_upscale = false
+
+[budgets]
+max_total_bytes = "4mb"
+max_file_bytes = "800kb"
+fail_on_regression = true

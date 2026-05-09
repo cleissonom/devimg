@@ -136,6 +136,7 @@ pub fn check_with_options(config: &Config, options: CheckOptions) -> Result<Chec
         .sum::<u64>();
     issues.extend(budget_issues(config, &actual_outputs));
     let budget_status = budget_status(&issues);
+    let generated_count = actual_outputs.len();
     let result_manifest = Manifest::new(
         path_to_string(&config.path),
         config.config_hash.clone(),
@@ -147,6 +148,9 @@ pub fn check_with_options(config: &Config, options: CheckOptions) -> Result<Chec
         mode: "check".to_string(),
         source_count: sources.len(),
         planned_count: plan.operations.len(),
+        generated_count,
+        skipped_count: 0,
+        stale_count: issues.iter().filter(|issue| issue.kind == "stale").count(),
         source_bytes: unique_source_bytes(&sources),
         output_bytes: total_output_bytes,
         warnings,
@@ -163,7 +167,7 @@ pub fn check_with_options(config: &Config, options: CheckOptions) -> Result<Chec
     })
 }
 
-fn validate_output_file(
+pub(crate) fn validate_output_file(
     operation: &crate::pipeline::Operation,
     actual_path: &PathBuf,
     actual_project_path: &str,

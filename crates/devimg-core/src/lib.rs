@@ -3,7 +3,9 @@ mod check;
 mod compare;
 mod config;
 mod doctor;
+mod framework;
 mod hash;
+mod incremental;
 mod manifest;
 mod pipeline;
 mod plan;
@@ -27,13 +29,15 @@ pub use doctor::{
 };
 pub use hash::{hash_bytes, hash_file};
 pub use manifest::{
-    export_manifest, manifest_export_to_json, manifest_export_to_typescript, read_manifest,
-    write_manifest, Manifest, ManifestExport, ManifestExportOptions, ManifestExportSource,
-    ManifestExportVariant, ManifestOutput,
+    export_manifest, manifest_export_to_json, manifest_export_to_typescript,
+    manifest_export_to_typescript_with_options, read_manifest, write_manifest, Manifest,
+    ManifestExport, ManifestExportOptions, ManifestExportSource, ManifestExportVariant,
+    ManifestOutput, ManifestTypescriptOptions,
 };
 pub use pipeline::{
-    build_plan, check, inspect_image, optimize, scan_sources, CheckIssue, CheckOptions,
-    CheckResult, ImageInspection, Operation, OptimizeOptions, OptimizeResult, Plan, SourceImage,
+    build_plan, check, check_with_options, inspect_image, optimize, scan_sources, CheckIssue,
+    CheckOptions, CheckResult, ImageInspection, Operation, OptimizeOptions, OptimizeResult, Plan,
+    SourceImage,
 };
 pub use report::{
     render_doctor_report, render_manifest_compare_report, render_manifest_report, render_run_report,

@@ -1,0 +1,49 @@
+name: Bug Report
+description: Report a reproducible DevImg problem.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Include commands, config snippets, fixture paths, and relevant output.
+      placeholder: |
+        devimg doctor --config devimg.toml
+        devimg check --config devimg.toml
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DevImg Version
+      placeholder: v0.1.9 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - CLI
+        - Core pipeline
+        - Config
+        - GitHub Action
+        - Manifest/export
+        - Reports/review
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional Context
+      description: Redact secrets and personal data before pasting logs.

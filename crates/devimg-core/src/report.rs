@@ -14,8 +14,20 @@ pub fn render_run_report(result: &OptimizeResult) -> String {
     out.push_str(&format!("- Variants planned: `{}`\n", result.planned_count));
     out.push_str(&format!(
         "- Variants generated: `{}`\n",
-        result.manifest.outputs.len()
+        result.generated_count
     ));
+    if result.skipped_count > 0 {
+        out.push_str(&format!("- Variants skipped: `{}`\n", result.skipped_count));
+    }
+    if result.stale_count > 0 {
+        out.push_str(&format!("- Variants stale: `{}`\n", result.stale_count));
+    }
+    if result.skipped_count > 0 || result.generated_count != result.manifest.outputs.len() {
+        out.push_str(&format!(
+            "- Manifest variants: `{}`\n",
+            result.manifest.outputs.len()
+        ));
+    }
     out.push_str(&format!("- Source bytes: `{}`\n", result.source_bytes));
     out.push_str(&format!("- Output bytes: `{}`\n", result.output_bytes));
     out.push_str(&format!("- Budget status: `{}`\n", result.budget_status));
@@ -141,6 +153,12 @@ pub fn render_doctor_report(report: &DoctorReport) -> String {
     out.push_str("Summary\n");
     out.push_str(&format!("- Config: `{}`\n", report.config_path));
     out.push_str(&format!("- Project root: `{}`\n", report.project_root));
+    let frameworks = if report.frameworks.is_empty() {
+        "none".to_string()
+    } else {
+        report.frameworks.join(", ")
+    };
+    out.push_str(&format!("- Frameworks: `{frameworks}`\n"));
     out.push_str(&format!(
         "- Source images: `{}`\n",
         report.source_image_count

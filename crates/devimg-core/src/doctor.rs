@@ -5,8 +5,10 @@ use serde::Serialize;
 
 use crate::check::{check_with_options, CheckOptions};
 use crate::config::{project_relative, resolve_project_path_checked, Config};
+use crate::framework::{inspect_frameworks, FrameworkWarning};
 use crate::manifest::{
-    manifest_export_to_json, manifest_export_to_typescript, read_manifest, ManifestExportOptions,
+    manifest_export_to_json, manifest_export_to_typescript_with_options, read_manifest,
+    ManifestExportOptions, ManifestTypescriptOptions,
 };
 use crate::pipeline::{path_to_string, CheckIssue};
 use crate::{build_plan, scan_sources, DevimgError, Result};
@@ -22,6 +24,7 @@ pub struct DoctorManifestExportOptions {
     pub format: DoctorManifestExportFormat,
     pub strip_prefix: Option<String>,
     pub url_prefix: String,
+    pub typescript_helpers: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -37,6 +40,7 @@ pub struct DoctorReport {
     pub project_root: String,
     pub manifest_path: String,
     pub report_path: String,
+    pub frameworks: Vec<String>,
     pub source_image_count: usize,
     pub planned_variant_count: usize,
     pub generated_variant_count: usize,
@@ -90,6 +94,7 @@ pub fn doctor(config: &Config, options: DoctorOptions) -> Result<DoctorReport> {
     let mut checks = Vec::new();
     let mut warnings = Vec::new();
     let mut issues = Vec::new();
+    let manifest_export_configured = options.manifest_export.is_some();
 
     checks.push(pass_check(
         "config",
@@ -97,6 +102,18 @@ pub fn doctor(config: &Config, options: DoctorOptions) -> Result<DoctorReport> {
     ));
 
     inspect_source_dirs(config, &mut checks, &mut warnings, &mut issues)?;
+    let framework_inspection = inspect_frameworks(config, manifest_export_configured);
+    if framework_inspection.frameworks.is_empty() {
+        checks.push(pass_check("framework", "no supported framework detected"));
+    } else {
+        checks.push(pass_check(
+            "framework",
+            format!("detected {}", framework_inspection.frameworks.join(", ")),
+        ));
+    }
+    for warning in framework_inspection.warnings {
+        warnings.push(framework_warning_diagnostic(warning));
+    }
 
     let mut source_image_count = 0usize;
     let mut planned_variant_count = 0usize;
@@ -231,6 +248,7 @@ pub fn doctor(config: &Config, options: DoctorOptions) -> Result<DoctorReport> {
         project_root,
         manifest_path: manifest_project_path,
         report_path: report_project_path,
+        frameworks: framework_inspection.frameworks,
         source_image_count,
         planned_variant_count,
         generated_variant_count,
@@ -356,9 +374,13 @@ fn inspect_manifest_export(
     };
     let rendered = match export_options.format {
         DoctorManifestExportFormat::Json => manifest_export_to_json(&manifest, &options),
-        DoctorManifestExportFormat::Typescript => {
-            manifest_export_to_typescript(&manifest, &options)
-        }
+        DoctorManifestExportFormat::Typescript => manifest_export_to_typescript_with_options(
+            &manifest,
+            &options,
+            &ManifestTypescriptOptions {
+                include_helpers: export_options.typescript_helpers,
+            },
+        ),
     };
 
     match fs::read(&output) {
@@ -450,6 +472,10 @@ fn warning_diagnostic(warning: &str, config_path: &str) -> DoctorDiagnostic {
         warning,
         "Review the preset/source config, then run `devimg doctor` again.",
     )
+}
+
+fn framework_warning_diagnostic(warning: FrameworkWarning) -> DoctorDiagnostic {
+    diagnostic(warning.code, warning.path, warning.message, warning.hint)
 }
 
 fn error_diagnostic(

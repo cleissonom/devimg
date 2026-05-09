@@ -14,7 +14,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.7
+      - uses: cleissonom/devimg/action@v0.1.10
         with:
           config: devimg.toml
           mode: check
@@ -22,3 +22,9 @@ jobs:
           export-format: typescript
           strip-prefix: public
           url-prefix: /
+          review-output: .devimg/review.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devimg-review
+          path: .devimg/review.html
+          if-no-files-found: error

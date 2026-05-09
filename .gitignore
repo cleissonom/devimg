@@ -1,5 +1,6 @@
 /target/
 /dist/
+.devimg/
 ai_tasks/
 next-steps.md
 devimg.md
@@ -7,3 +8,7 @@ devimg.md
 examples/portfolio/public/images/generated/
 examples/portfolio/public/images/devimg-manifest.json
 examples/portfolio/devimg-report.md
+examples/dogfood/public/images/generated/
+examples/dogfood/public/images/devimg-manifest.json
+examples/dogfood/devimg-report.md
+examples/dogfood/lib/devimg.generated.ts

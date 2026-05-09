@@ -54,6 +54,7 @@ jobs:
             --format typescript \
             --strip-prefix public \
             --url-prefix / \
+            --typescript-helpers \
             --output "${RUNNER_TEMP}/devimg.generated.ts"
 
       - name: Smoke local action check
@@ -66,11 +67,48 @@ jobs:
           manifest-path: examples/portfolio/public/images/devimg-manifest.json
           export-output: ${{ runner.temp }}/devimg.generated.ts
           export-format: typescript
+          export-typescript-helpers: "true"
           strip-prefix: public
           url-prefix: /
+          review-output: examples/portfolio/.devimg/review.html
 
       - name: Verify action smoke artifacts
         run: |
           test -s examples/portfolio/devimg-report.md
           test -s examples/portfolio/public/images/devimg-manifest.json
           test -s "${RUNNER_TEMP}/devimg.generated.ts"
+          test -s examples/portfolio/.devimg/review.html
+
+      - name: Smoke dogfood example
+        run: |
+          target/debug/devimg optimize --config examples/dogfood/devimg.toml --dry-run
+          target/debug/devimg optimize --config examples/dogfood/devimg.toml
+          target/debug/devimg check --config examples/dogfood/devimg.toml
+          target/debug/devimg manifest export \
+            --manifest examples/dogfood/public/images/devimg-manifest.json \
+            --format typescript \
+            --strip-prefix public \
+            --url-prefix / \
+            --typescript-helpers \
+            --output "${RUNNER_TEMP}/dogfood.generated.ts"
+          target/debug/devimg manifest export \
+            --manifest examples/dogfood/public/images/devimg-manifest.json \
+            --format typescript \
+            --strip-prefix public \
+            --url-prefix / \
+            --typescript-helpers \
+            --output "${RUNNER_TEMP}/dogfood.generated.ts" \
+            --check
+          target/debug/devimg doctor \
+            --config examples/dogfood/devimg.toml \
+            --export-output "${RUNNER_TEMP}/dogfood.generated.ts" \
+            --export-format typescript \
+            --strip-prefix public \
+            --url-prefix / \
+            --typescript-helpers
+          target/debug/devimg review \
+            --manifest examples/dogfood/public/images/devimg-manifest.json \
+            --output examples/dogfood/.devimg/review.html
+          test -s examples/dogfood/public/images/devimg-manifest.json
+          test -s "${RUNNER_TEMP}/dogfood.generated.ts"
+          test -s examples/dogfood/.devimg/review.html

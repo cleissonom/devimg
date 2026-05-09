@@ -25,7 +25,7 @@ inputs:
   version:
     description: Release version to download when no binary is available
     required: false
-    default: v0.1.9
+    default: v0.1.10
   report-path:
     description: Markdown report path to append to the job summary
     required: false
@@ -44,12 +44,26 @@ inputs:
     description: "Manifest export format: json or typescript"
     required: false
     default: json
+  export-typescript-helpers:
+    description: Add TypeScript lookup helpers when verifying a TypeScript manifest export
+    required: false
+    default: "false"
   strip-prefix:
     description: Optional project path prefix to strip from exported image URLs
     required: false
   url-prefix:
     description: Optional URL prefix to add to exported image URLs
     required: false
+  review-output:
+    description: Optional static HTML review artifact path to create after a successful run
+    required: false
+  review-manifest:
+    description: Optional manifest path to render for the review artifact; defaults to manifest-path
+    required: false
+  review-force:
+    description: Replace an existing review artifact when review-output is set
+    required: false
+    default: "false"
 
 outputs:
   status:
@@ -61,6 +75,9 @@ outputs:
   manifest-path:
     description: Manifest path
     value: ${{ steps.run.outputs.manifest-path }}
+  review-output:
+    description: Static HTML review artifact path when generated
+    value: ${{ steps.run.outputs.review-output }}
 
 runs:
   using: composite
@@ -120,8 +137,12 @@ runs:
         DEVIMG_EXPORT_OUTPUT: ${{ inputs.export-output }}
         DEVIMG_EXPORT_MANIFEST: ${{ inputs.export-manifest }}
         DEVIMG_EXPORT_FORMAT: ${{ inputs.export-format }}
+        DEVIMG_EXPORT_TYPESCRIPT_HELPERS: ${{ inputs.export-typescript-helpers }}
         DEVIMG_STRIP_PREFIX: ${{ inputs.strip-prefix }}
         DEVIMG_URL_PREFIX: ${{ inputs.url-prefix }}
+        DEVIMG_REVIEW_OUTPUT: ${{ inputs.review-output }}
+        DEVIMG_REVIEW_MANIFEST: ${{ inputs.review-manifest }}
+        DEVIMG_REVIEW_FORCE: ${{ inputs.review-force }}
       run: |
         set +e
         reject_multiline() {
@@ -140,18 +161,97 @@ runs:
         reject_multiline "export-output" "$DEVIMG_EXPORT_OUTPUT"
         reject_multiline "export-manifest" "$DEVIMG_EXPORT_MANIFEST"
         reject_multiline "export-format" "$DEVIMG_EXPORT_FORMAT"
+        reject_multiline "export-typescript-helpers" "$DEVIMG_EXPORT_TYPESCRIPT_HELPERS"
         reject_multiline "strip-prefix" "$DEVIMG_STRIP_PREFIX"
         reject_multiline "url-prefix" "$DEVIMG_URL_PREFIX"
+        reject_multiline "review-output" "$DEVIMG_REVIEW_OUTPUT"
+        reject_multiline "review-manifest" "$DEVIMG_REVIEW_MANIFEST"
+        reject_multiline "review-force" "$DEVIMG_REVIEW_FORCE"
         case "$DEVIMG_EXPORT_FORMAT" in
           json|typescript) ;;
           *) echo "Unsupported export-format: $DEVIMG_EXPORT_FORMAT" >&2; exit 2 ;;
         esac
+        case "$DEVIMG_EXPORT_TYPESCRIPT_HELPERS" in
+          true|false) ;;
+          *) echo "export-typescript-helpers must be true or false" >&2; exit 2 ;;
+        esac
+        case "$DEVIMG_REVIEW_FORCE" in
+          true|false) ;;
+          *) echo "review-force must be true or false" >&2; exit 2 ;;
+        esac
+        if [[ "$DEVIMG_EXPORT_TYPESCRIPT_HELPERS" == "true" && "$DEVIMG_EXPORT_FORMAT" != "typescript" ]]; then
+          echo "export-typescript-helpers requires export-format: typescript" >&2
+          exit 2
+        fi
         bin="$DEVIMG_BIN"
         mode="$DEVIMG_MODE"
         config="$DEVIMG_CONFIG"
         status="pass"
+        log_dir="${RUNNER_TEMP:-.}"
+        mkdir -p "$log_dir"
+        command_log="$log_dir/devimg-action-output.md"
+        : > "$command_log"
+        run_logged() {
+          "$@" 2>&1 | tee -a "$command_log"
+          return "${PIPESTATUS[0]}"
+        }
+        extract_count() {
+          local label="$1"
+          local file="$2"
+          awk -v prefix="- ${label}: " 'index($0, prefix) == 1 { value = substr($0, length(prefix) + 1); gsub(/`/, "", value); print value }' "$file" | tail -n 1
+        }
+        append_summary() {
+          if [[ -z "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            return 0
+          fi
+          local summary_source=""
+          if [[ "$status" == "fail" && -s "$command_log" ]]; then
+            summary_source="$command_log"
+          elif [[ -f "$DEVIMG_REPORT_PATH" ]]; then
+            summary_source="$DEVIMG_REPORT_PATH"
+          elif [[ -s "$command_log" ]]; then
+            summary_source="$command_log"
+          fi
+          {
+            echo "## DevImg Action"
+            echo
+            echo "- Status: \`$status\`"
+            echo "- Mode: \`$mode\`"
+            if [[ "$mode" == "check" ]]; then
+              echo "- Report path: \`$DEVIMG_REPORT_PATH\` (not written by Action check mode)"
+            else
+              echo "- Report path: \`$DEVIMG_REPORT_PATH\`"
+            fi
+            echo "- Manifest path: \`$DEVIMG_MANIFEST_PATH\`"
+            if [[ -n "$DEVIMG_REVIEW_OUTPUT" ]]; then
+              echo "- Review artifact: \`$DEVIMG_REVIEW_OUTPUT\`"
+            fi
+            if [[ -n "$summary_source" ]]; then
+              generated="$(extract_count "Variants generated" "$summary_source")"
+              skipped="$(extract_count "Variants skipped" "$summary_source")"
+              stale="$(extract_count "Variants stale" "$summary_source")"
+              if [[ -n "$generated" ]]; then
+                echo "- Variants generated: \`$generated\`"
+              fi
+              if [[ -n "$skipped" ]]; then
+                echo "- Variants skipped: \`$skipped\`"
+              fi
+              if [[ -n "$stale" ]]; then
+                echo "- Variants stale: \`$stale\`"
+              fi
+            fi
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "$summary_source" ]]; then
+            {
+              echo "## DevImg Output"
+              echo
+              cat "$summary_source"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+        }
         if [[ "$mode" == "check" ]]; then
-          args=(check --config "$config")
+          args=(check --config "$config" --no-report)
           if [[ "$DEVIMG_FAIL_ON_WARNING" == "true" ]]; then
             args+=(--fail-on-warning)
           fi
@@ -161,7 +261,7 @@ runs:
           echo "Unsupported mode: $mode" >&2
           exit 2
         fi
-        "$bin" "${args[@]}"
+        run_logged "$bin" "${args[@]}"
         code="$?"
         if [[ "$code" == "0" && "$mode" == "check" && -n "$DEVIMG_EXPORT_OUTPUT" ]]; then
           export_manifest="$DEVIMG_EXPORT_MANIFEST"
@@ -182,7 +282,26 @@ runs:
           if [[ -n "$DEVIMG_URL_PREFIX" ]]; then
             export_args+=(--url-prefix "$DEVIMG_URL_PREFIX")
           fi
-          "$bin" "${export_args[@]}"
+          if [[ "$DEVIMG_EXPORT_TYPESCRIPT_HELPERS" == "true" ]]; then
+            export_args+=(--typescript-helpers)
+          fi
+          run_logged "$bin" "${export_args[@]}"
+          code="$?"
+        fi
+        if [[ "$code" == "0" && -n "$DEVIMG_REVIEW_OUTPUT" ]]; then
+          review_manifest="$DEVIMG_REVIEW_MANIFEST"
+          if [[ -z "$review_manifest" ]]; then
+            review_manifest="$DEVIMG_MANIFEST_PATH"
+          fi
+          review_args=(
+            review
+            --manifest "$review_manifest"
+            --output "$DEVIMG_REVIEW_OUTPUT"
+          )
+          if [[ "$DEVIMG_REVIEW_FORCE" == "true" ]]; then
+            review_args+=(--force)
+          fi
+          run_logged "$bin" "${review_args[@]}"
           code="$?"
         fi
         if [[ "$code" != "0" ]]; then
@@ -191,7 +310,6 @@ runs:
         echo "status=$status" >> "$GITHUB_OUTPUT"
         echo "report-path=$DEVIMG_REPORT_PATH" >> "$GITHUB_OUTPUT"
         echo "manifest-path=$DEVIMG_MANIFEST_PATH" >> "$GITHUB_OUTPUT"
-        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && -f "$DEVIMG_REPORT_PATH" ]]; then
-          cat "$DEVIMG_REPORT_PATH" >> "$GITHUB_STEP_SUMMARY"
-        fi
+        echo "review-output=$DEVIMG_REVIEW_OUTPUT" >> "$GITHUB_OUTPUT"
+        append_summary
         exit "$code"

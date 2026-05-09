@@ -1,0 +1,30 @@
+name: Feature Request
+description: Propose a focused DevImg improvement.
+title: "feature: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow or limitation should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Behavior
+      description: Describe the CLI/config/Action/docs behavior you want.
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-Goals
+      description: What should this not change?
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: How should this be tested or demonstrated?

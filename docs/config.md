@@ -130,6 +130,19 @@ Current diagnostics:
 
 Larger generated files are not always wrong. They can happen when the source is already aggressively optimized, when quality is intentionally high, when converting formats, or when graphics/transparency compress better in the source format. Compare visually before lowering quality.
 
+## Framework Diagnostics
+
+`devimg doctor` detects Next.js, Astro, and Vite from common config files and `package.json` dependency sections.
+
+Framework warnings are advisory:
+
+- `framework_multiple_detected`: more than one supported framework was detected.
+- `framework_next_image_double_optimization`: Next.js was detected with generated files under `public/`; verify `next/image` or hosting image optimization is not reprocessing generated variants unexpectedly.
+- `framework_cache_without_hash`: a framework project outputs generated assets under `public/` while `content_hash_filenames = false`.
+- `framework_manifest_export_missing`: content-hash filenames are enabled in a framework project, but `doctor` was not given `--export-output` to verify the checked-in helper file.
+
+These warnings do not add framework runtime coupling. They are hints to review config, app image consumption, cache headers, and manifest export checks.
+
 ## Budgets
 
 `max_total_bytes` and `max_file_bytes` accept byte strings such as `350kb`, `3mb`, or raw byte counts.

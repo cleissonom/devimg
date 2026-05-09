@@ -2,7 +2,7 @@
 
 `devimg` is a Rust CLI and GitHub Action for deterministic web image variants. It scans configured PNG/JPEG/WebP image folders, generates responsive PNG/JPEG/WebP/AVIF outputs, writes a JSON manifest and Markdown report, and lets CI fail when generated images are missing, stale, or over budget.
 
-The MVP has no web UI and no remote storage. The CLI is the source of truth; the GitHub Action wraps `devimg check` or `devimg optimize` and can optionally verify checked-in manifest exports.
+The MVP has no web UI and no remote storage. The CLI is the source of truth; the GitHub Action wraps `devimg check` or `devimg optimize`, can verify checked-in manifest exports, and can create an optional static review artifact for CI upload.
 
 ## Quickstart
 
@@ -25,6 +25,7 @@ cargo run -p devimg-cli -- agent init --target both --stdout
 cargo run -p devimg-cli -- optimize --config examples/portfolio/devimg.toml --dry-run
 cargo run -p devimg-cli -- report --manifest examples/portfolio/public/images/devimg-manifest.json
 cargo run -p devimg-cli -- review --manifest examples/portfolio/public/images/devimg-manifest.json --output examples/portfolio/.devimg/review.html
+cargo run -p devimg-cli -- optimize --config examples/dogfood/devimg.toml
 cargo run -p devimg-cli -- manifest export --manifest examples/portfolio/public/images/devimg-manifest.json
 cargo run -p devimg-cli -- compare --base old-devimg-manifest.json --head public/images/devimg-manifest.json
 cargo run -p devimg-cli -- inspect fixtures/images/sample.png
@@ -39,6 +40,17 @@ devimg manifest export --manifest public/images/devimg-manifest.json --strip-pre
 devimg check --config devimg.toml
 devimg doctor --config devimg.toml --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 ```
+
+Repeated `optimize` runs are incremental. When the current manifest and output file prove a variant is already fresh, DevImg skips the expensive decode/resize/encode work and reports the skipped count. If config, source bytes, output bytes, or dimensions are stale, DevImg falls back to normal generation and keeps the existing safe-overwrite rules.
+
+## Examples
+
+See `examples/README.md` for maintained fixtures:
+
+- `examples/portfolio`: small portfolio/blog/docs workflow with stable filenames.
+- `examples/dogfood`: broader frontend workflow with content-hash filenames, social/card/logo/screenshot-like paths, `cover` and `contain` presets, helper export, and visual review coverage.
+
+Generated example outputs are ignored and reproducible. Regenerate them with `devimg`; do not hand-edit generated variants, manifests, reports, helper exports, or review artifacts.
 
 ## Config
 
@@ -114,7 +126,27 @@ devimg manifest export \
   --check
 ```
 
-The exported variants include `src`, `output_path`, `preset`, `fit`, `width`, `height`, `format`, `bytes`, and `hash`. `--strip-prefix public --url-prefix /` converts an output path such as `public/images/generated/card.project-card.640.jpeg` into `/images/generated/card.project-card.640.jpeg`.
+The stable export contract is:
+
+- Top level: `version`, `generated_at`, `config_hash`, and `sources`.
+- Each source: `source_path`, `source_hash`, `source_width`, `source_height`, `source_bytes`, and `variants`.
+- Each variant: `src`, `output_path`, `preset`, `fit`, `width`, `height`, `format`, `bytes`, and `hash`.
+
+Application code should select variants from the export instead of hard-coding generated filenames. `--strip-prefix public --url-prefix /` converts an output path such as `public/images/generated/card.project-card.640.jpeg` into `/images/generated/card.project-card.640.jpeg`.
+
+The default JSON and TypeScript export shape is stable and data-only. For TypeScript apps that want generated lookup helpers instead of hand-written helper code, add `--typescript-helpers`:
+
+```bash
+devimg manifest export \
+  --manifest public/images/devimg-manifest.json \
+  --strip-prefix public \
+  --url-prefix / \
+  --format typescript \
+  --typescript-helpers \
+  --output lib/devimg.generated.ts
+```
+
+Helper-mode TypeScript still exports `DEVIMG_MANIFEST`; it also exports `findDevimgSource`, `listDevimgVariants`, and `findDevimgVariant`. The selector accepts `source`, plus optional `preset`, `format`, exact `width`, or `minWidth`. When `minWidth` is used and no large-enough variant exists, `findDevimgVariant` returns the largest matching variant as a practical fallback.
 
 `devimg doctor` can also verify a checked-in export without rewriting it:
 
@@ -126,6 +158,8 @@ devimg doctor \
   --strip-prefix public \
   --url-prefix /
 ```
+
+Add `--typescript-helpers` to `doctor` and `manifest export --check` when the checked-in helper file was generated with helper mode.
 
 ## Manifest Compare
 
@@ -185,6 +219,16 @@ devimg check --config devimg.toml --fail-on-warning
 
 Use `devimg doctor --json` when an AI agent or CI tool needs machine-readable `quality_warning` entries. Use `devimg review` for manifest-only visual checks of upscaled outputs and output-size surprises.
 
+## Framework Diagnostics
+
+`devimg doctor` detects common frontend projects from config files and `package.json` dependencies:
+
+- Next.js
+- Astro
+- Vite
+
+Framework diagnostics are advisory warnings. They do not change image generation and do not fail `doctor` by themselves. Current hints cover mixed framework detection, possible Next.js double optimization, public generated outputs without content-hash filenames, and content-hash filenames without a checked-in manifest export passed through `--export-output`.
+
 For `fit = "cover"`, `crop` controls which part of the resized image is preserved when the aspect ratio requires cropping. It defaults to `center`. Use anchors such as `top`, `bottom`, `left`, `right`, `top-left`, or a normalized focal point:
 
 ```toml
@@ -206,7 +250,7 @@ fit = "contain"
 - `optimize --dry-run` plans work without writing files.
 - Existing unmanaged outputs are not overwritten unless config `overwrite = true` or CLI `--allow-overwrite` is used.
 - Re-encoding strips metadata by default. `strip_metadata = false` is parsed, but the MVP encoders do not preserve source metadata.
-- `check` fails on missing outputs, stale manifests, modified outputs, outdated config hashes, and byte budget violations. Add `--fail-on-warning` when advisory warnings should fail CI.
+- `check` fails on missing outputs, stale manifests, modified outputs, outdated config hashes, and byte budget violations. Add `--fail-on-warning` when advisory warnings should fail CI, or `--no-report` when a wrapper needs read-only validation without rewriting the Markdown report.
 
 Exit codes are stable for CI:
 
@@ -221,6 +265,8 @@ Exit codes are stable for CI:
 Codex, Claude Code, and similar tools should run `devimg doctor --config devimg.toml` before editing image sources, config, manifests, generated variants, or app helper files. After changes, run the local loop above and commit the generated variants, manifest, report, and checked-in helper files together.
 
 Do not edit generated files by hand. If agent instruction files such as `AGENTS.md`, `CLAUDE.md`, or `.claude/skills/**` already exist, do not overwrite them; add project-specific guidance only through an explicit reviewed change.
+
+See `docs/agent-contract.md` for the full AI-agent contract, including editable files, generated files, warning policy, and final response expectations.
 
 Use `devimg agent init` to create safe project instructions when a project does not already have them:
 
@@ -243,7 +289,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.9
+      - uses: cleissonom/devimg/action@v0.1.10
         with:
           config: devimg.toml
           mode: check
@@ -251,13 +297,23 @@ jobs:
           export-format: typescript
           strip-prefix: public
           url-prefix: /
+          review-output: .devimg/review.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devimg-review
+          path: .devimg/review.html
+          if-no-files-found: error
 ```
 
 This repository's CI smoke test builds the CLI, runs the local composite Action with `uses: ./action`, and passes `binary-path: target/debug/devimg`. Consumer workflows should use the published Action path shown above.
 
-When `export-output` is set, the Action runs `devimg manifest export --check` after `devimg check` and fails if the checked-in helper file is missing or stale. It does not rewrite the helper.
+When `export-output` is set, the Action runs `devimg manifest export --check` after `devimg check --no-report` and fails if the checked-in helper file is missing or stale. It does not rewrite the helper. Set `export-typescript-helpers: "true"` when the checked-in TypeScript file was generated with `--typescript-helpers`.
+
+When `review-output` is set, the Action generates a static HTML visual review artifact after the main command succeeds. Upload that file with `actions/upload-artifact` to inspect generated variants from the workflow run. The Action does not upload artifacts, commit generated files, or post PR comments by itself. In `mode: check`, it uses `devimg check --no-report` so report validation stays read-only.
 
 ## Development
+
+See `CONTRIBUTING.md` for the contributor workflow, `SECURITY.md` for private vulnerability reporting, and `CHANGELOG.md` for unreleased user-facing changes.
 
 ```bash
 cargo fmt --all -- --check
@@ -270,8 +326,8 @@ cargo test --all
 Create a version tag that matches the workspace version and push it:
 
 ```bash
-git tag v0.1.9
-git push origin v0.1.9
+git tag v0.1.10
+git push origin v0.1.10
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.
@@ -280,4 +336,4 @@ The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256
 
 - Stable source image scope is PNG, JPEG, and WebP. AVIF is supported as an opt-in output format only.
 - `quality` controls lossy JPEG, WebP, and AVIF output. PNG remains lossless and ignores `quality`.
-- The Action does not commit generated files or post PR comments.
+- The Action does not commit generated files, upload artifacts automatically, or post PR comments.

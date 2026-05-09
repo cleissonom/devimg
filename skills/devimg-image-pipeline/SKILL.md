@@ -18,13 +18,17 @@ description: Run DevImg image pipeline workflows safely in frontend repositories
 ## Rules
 
 - Treat `devimg doctor` as the project-state contract.
+- Follow `docs/agent-contract.md` when it exists.
 - Use `devimg doctor --json` when deterministic machine-readable state helps.
+- Treat skipped variants from `devimg optimize` as current outputs that were safely reused from the manifest. Continue to run `devimg check` after optimize.
 - Treat `quality_warning` output as a review signal. Do not auto-tune image config silently; suggest explicit changes such as raising `quality`, reducing `widths`, changing `fit`/`crop`, using `fit = "contain"`, or replacing a too-small source image.
 - Use `devimg review --stdout` for static HTML context without writing files, and do not overwrite an existing review artifact unless the user approves `--force`.
+- In GitHub Actions, use the Action `review-output` input with `actions/upload-artifact` for visual review artifacts. Do not add PR comment bots or automatic commits unless the maintainer asks.
 - Do not hand-edit generated image variants, manifests, Markdown reports, or generated helper modules.
 - Commit generated image variants, `devimg-manifest.json`, `devimg-report.md`, and checked-in manifest helpers together.
 - Do not overwrite existing `AGENTS.md`, `CLAUDE.md`, `.claude/commands/**`, `.claude/skills/**`, or other agent instruction files unless the user explicitly asks.
 - If manifest/helper paths differ, inspect `devimg.toml` before running `manifest export`.
+- If a checked-in TypeScript helper uses `--typescript-helpers`, include that flag when regenerating it or checking export drift.
 
 ## Common Commands
 

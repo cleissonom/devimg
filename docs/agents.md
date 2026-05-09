@@ -2,6 +2,8 @@
 
 Run `devimg doctor --config devimg.toml` before changing source images, `devimg.toml`, generated variants, manifests, reports, or app helper files. The doctor output is the project-state contract for Codex, Claude Code, and other coding agents.
 
+The full agent contract lives in `docs/agent-contract.md`. Use it as the file ownership and safety policy when a project has DevImg-managed assets.
+
 Recommended loop:
 
 ```bash
@@ -13,11 +15,17 @@ devimg check --config devimg.toml
 devimg doctor --config devimg.toml --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 ```
 
+If the generated TypeScript helper was created with `--typescript-helpers`, use the same flag in `doctor --export-output`, `manifest export --check`, and Action export drift checks.
+
 Use `devimg doctor --json` when an agent or CI job needs deterministic machine-readable state.
 
 Treat `quality_warning` entries as prompts for review, not as permission to auto-tune images. Prefer proposing explicit `devimg.toml` changes such as raising `quality`, reducing `widths`, changing `fit`/`crop`, using `fit = "contain"`, or replacing a too-small source image.
 
+`devimg optimize` may report skipped variants on unchanged runs. Treat skipped variants as successfully reused outputs, not as missing work. If stale variants are reported, continue with `devimg check` and `devimg doctor` to confirm whether the regenerated outputs and manifest are now current.
+
 Use `devimg review --stdout` when an agent needs static HTML context without creating a file. Use `--output .devimg/review.html` for a browser-openable local review artifact, and do not overwrite an existing artifact unless the user explicitly approves `--force`.
+
+In GitHub Actions, prefer the built-in `review-output` input plus `actions/upload-artifact` for CI visual review artifacts. Do not add PR comment bots or automatic commits unless the maintainer explicitly asks for that workflow.
 
 Do not edit generated files by hand. Commit generated variants, `devimg-manifest.json`, `devimg-report.md`, and checked-in manifest helper files together when they change.
 
