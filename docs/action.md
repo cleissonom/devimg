@@ -18,7 +18,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.11
+      - uses: cleissonom/devimg/action@v0.1.12
         with:
           config: devimg.toml
           mode: check
@@ -55,6 +55,6 @@ Export inputs:
 
 Set `review-output` when the workflow should produce a static visual review artifact. The Action runs `devimg review --manifest <manifest> --output <review-output>` after the main command and optional export check pass. `review-manifest` can override the manifest path used for the artifact; otherwise it defaults to `manifest-path`. `review-force: true` passes `--force` to replace an existing artifact. Pair this with `actions/upload-artifact` because the Action does not upload files automatically.
 
-The default `version` input is `v0.1.11`, which maps to release assets such as `devimg-linux-x86_64.tar.gz`.
+The default `version` input is `v0.1.12`, which maps to release assets such as `devimg-linux-x86_64.tar.gz`.
 
 The MVP does not post PR comments, commit generated image files, rewrite reports in check mode, or rewrite manifest helper files.

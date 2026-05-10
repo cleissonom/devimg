@@ -40,6 +40,7 @@ pub struct Operation {
     pub format: FormatKind,
     pub width: u32,
     pub height: u32,
+    pub strip_metadata: bool,
     pub content_hash_filenames: bool,
     pub output_path: PathBuf,
     pub output_project_path: String,
@@ -234,7 +235,8 @@ mod tests {
     use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
 
     use crate::{
-        build_plan, check, load_config, optimize, scan_sources, DevimgError, OptimizeOptions,
+        build_plan, check, load_config, optimize, scan_sources, write_manifest, DevimgError,
+        OptimizeOptions,
     };
 
     #[test]
@@ -359,23 +361,88 @@ mod tests {
     }
 
     #[test]
-    fn optimize_does_not_skip_after_config_hash_changes() {
+    fn optimize_reuses_outputs_after_metadata_only_config_changes() {
         let project = temp_project("config_stale_incremental");
         write_image(&project.join("assets/images/card.png"), 800, 450);
         write_config(&project, r#"max_total_bytes = "5mb""#);
 
         let config = load_config(project.join("devimg.toml")).expect("config loads");
-        optimize(&config, OptimizeOptions::default()).expect("first optimize succeeds");
+        let first = optimize(&config, OptimizeOptions::default()).expect("first optimize succeeds");
         write_config(&project, r#"max_total_bytes = "4mb""#);
         let changed_config = load_config(project.join("devimg.toml")).expect("config reloads");
 
         let result =
             optimize(&changed_config, OptimizeOptions::default()).expect("optimize succeeds");
 
-        assert_eq!(result.generated_count, 2);
-        assert_eq!(result.skipped_count, 0);
-        assert_eq!(result.stale_count, 2);
+        assert_eq!(result.generated_count, 0);
+        assert_eq!(result.skipped_count, 2);
+        assert_eq!(result.stale_count, 0);
+        assert_eq!(result.manifest.config_hash, changed_config.config_hash);
+        assert_eq!(
+            result.manifest.outputs[0].hash,
+            first.manifest.outputs[0].hash
+        );
         assert!(check(&changed_config).expect("check runs").passed);
+        cleanup(&project);
+    }
+
+    #[test]
+    fn acknowledgement_only_config_change_reuses_outputs_and_normalizes_operation_hashes() {
+        let project = temp_project("ack_incremental");
+        write_image(&project.join("assets/images/accesstrace.png"), 640, 360);
+        write_acknowledgement_config(&project, "");
+
+        let config = load_config(project.join("devimg.toml")).expect("config loads");
+        let plan = build_plan(&config, &scan_sources(&config).expect("scan succeeds"))
+            .expect("plan succeeds");
+        let first = optimize(&config, OptimizeOptions::default()).expect("first optimize succeeds");
+        let first_output = first.manifest.outputs[0].clone();
+        let first_config_hash = first.manifest.config_hash.clone();
+
+        let mut legacy_manifest = first.manifest.clone();
+        legacy_manifest.outputs[0].operation_hash =
+            crate::plan::legacy_operation_hash(&plan.operations[0], &config.config_hash);
+        write_manifest(
+            &project.join("public/images/devimg-manifest.json"),
+            &legacy_manifest,
+        )
+        .expect("legacy manifest writes");
+
+        write_acknowledgement_config(
+            &project,
+            r#"
+[[warnings.acknowledge]]
+code = "quality:cover-crop"
+source = "assets/images/accesstrace.png"
+preset = "project-card"
+width = 120
+reason = "Intentional top crop after review."
+"#,
+        );
+        let acknowledged_config =
+            load_config(project.join("devimg.toml")).expect("ack config loads");
+        let second = optimize(&acknowledged_config, OptimizeOptions::default())
+            .expect("second optimize succeeds");
+
+        assert_ne!(first_config_hash, second.manifest.config_hash);
+        assert_eq!(second.generated_count, 0);
+        assert_eq!(second.skipped_count, 1);
+        assert_eq!(second.stale_count, 0);
+        assert_eq!(
+            second.manifest.outputs[0].output_path,
+            first_output.output_path
+        );
+        assert_eq!(second.manifest.outputs[0].hash, first_output.hash);
+        assert_eq!(
+            second.manifest.outputs[0].operation_hash,
+            first_output.operation_hash
+        );
+        assert!(second.warnings.is_empty());
+        assert_eq!(second.acknowledged_warnings.len(), 1);
+
+        let strict_check = check(&acknowledged_config).expect("check runs");
+        assert!(strict_check.passed);
+        assert_eq!(strict_check.result.acknowledged_warnings.len(), 1);
         cleanup(&project);
     }
 
@@ -839,6 +906,41 @@ quality = 82
 fit = "cover"
 aspect_ratio = "16:9"
 {crop_line}
+
+[budgets]
+max_total_bytes = "5mb"
+"#
+            ),
+        )
+        .expect("config writes");
+    }
+
+    fn write_acknowledgement_config(project: &Path, warning_settings: &str) {
+        fs::write(
+            project.join("devimg.toml"),
+            format!(
+                r#"[project]
+root = "."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+content_hash_filenames = true
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png"]
+
+[[preset]]
+name = "project-card"
+widths = [120]
+formats = ["webp"]
+quality = 90
+fit = "cover"
+aspect_ratio = "1:1"
+crop = "top"
+
+{warning_settings}
 
 [budgets]
 max_total_bytes = "5mb"

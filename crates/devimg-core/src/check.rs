@@ -9,6 +9,7 @@ use crate::manifest::{Manifest, ManifestOutput};
 use crate::pipeline::{
     path_to_string, unique_source_bytes, write_report, CheckIssue, CheckResult, OptimizeResult,
 };
+use crate::plan::legacy_operation_hash;
 use crate::quality::{append_unique, manifest_quality_warnings};
 use crate::transform::final_output_project_path;
 use crate::warnings::split_acknowledged_warnings;
@@ -71,9 +72,14 @@ pub fn check_with_options(config: &Config, options: CheckOptions) -> Result<Chec
     let mut actual_outputs = Vec::new();
     for operation in &plan.operations {
         let manifest_output = if operation.content_hash_filenames {
-            hashed_manifest_output(operation, &by_operation_hash, &mut issues)?
+            hashed_manifest_output(
+                operation,
+                &manifest.config_hash,
+                &by_operation_hash,
+                &mut issues,
+            )?
         } else {
-            stable_manifest_output(operation, &by_output, &mut issues)
+            stable_manifest_output(operation, &manifest.config_hash, &by_output, &mut issues)
         };
 
         let actual_project_path = manifest_output
@@ -216,12 +222,13 @@ fn validate_avif_container(path: &PathBuf) -> std::result::Result<(), String> {
 
 fn stable_manifest_output<'a>(
     operation: &crate::pipeline::Operation,
+    manifest_config_hash: &str,
     by_output: &'a HashMap<&str, &'a ManifestOutput>,
     issues: &mut Vec<CheckIssue>,
 ) -> Option<&'a ManifestOutput> {
     match by_output.get(operation.output_project_path.as_str()) {
         Some(manifest_output) => {
-            if manifest_output.operation_hash != operation.operation_hash {
+            if !operation_hash_matches(manifest_output, operation, manifest_config_hash) {
                 issues.push(CheckIssue {
                     kind: "stale".to_string(),
                     path: operation.output_project_path.clone(),
@@ -243,10 +250,15 @@ fn stable_manifest_output<'a>(
 
 fn hashed_manifest_output<'a>(
     operation: &crate::pipeline::Operation,
+    manifest_config_hash: &str,
     by_operation_hash: &'a HashMap<&str, Vec<&'a ManifestOutput>>,
     issues: &mut Vec<CheckIssue>,
 ) -> Result<Option<&'a ManifestOutput>> {
-    let Some(outputs) = by_operation_hash.get(operation.operation_hash.as_str()) else {
+    let legacy_hash = legacy_operation_hash(operation, manifest_config_hash);
+    let Some(outputs) = by_operation_hash
+        .get(operation.operation_hash.as_str())
+        .or_else(|| by_operation_hash.get(legacy_hash.as_str()))
+    else {
         issues.push(CheckIssue {
             kind: "stale".to_string(),
             path: operation.output_project_path.clone(),
@@ -275,4 +287,13 @@ fn hashed_manifest_output<'a>(
     }
 
     Ok(Some(output))
+}
+
+fn operation_hash_matches(
+    output: &ManifestOutput,
+    operation: &crate::pipeline::Operation,
+    manifest_config_hash: &str,
+) -> bool {
+    output.operation_hash == operation.operation_hash
+        || output.operation_hash == legacy_operation_hash(operation, manifest_config_hash)
 }

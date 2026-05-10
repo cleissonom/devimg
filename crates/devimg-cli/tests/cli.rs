@@ -12,7 +12,7 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["review", "--help"]), 0);
     let version = run(["--version"]);
     assert_status(&version, 0);
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.11"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.12"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -99,12 +99,13 @@ fn optimize_reports_incremental_skips_and_stale_work() {
     assert!(report.contains("- Variants skipped: `1`"));
 
     write_project_config(&project, 64, "", r#"max_total_bytes = "4mb""#);
-    let stale = run(["optimize", "--config", config.as_str()]);
-    assert_status(&stale, 0);
-    let stale_stdout = String::from_utf8_lossy(&stale.stdout);
-    assert!(stale_stdout.contains("- Variants generated: `1`"));
-    assert!(stale_stdout.contains("- Variants stale: `1`"));
-    assert!(!stale_stdout.contains("- Variants skipped:"));
+    let metadata_refresh = run(["optimize", "--config", config.as_str()]);
+    assert_status(&metadata_refresh, 0);
+    let metadata_refresh_stdout = String::from_utf8_lossy(&metadata_refresh.stdout);
+    assert!(metadata_refresh_stdout.contains("- Variants generated: `0`"));
+    assert!(metadata_refresh_stdout.contains("- Variants skipped: `1`"));
+    assert!(metadata_refresh_stdout.contains("- Manifest variants: `1`"));
+    assert!(!metadata_refresh_stdout.contains("- Variants stale:"));
 
     cleanup(&project);
 }
@@ -974,6 +975,7 @@ fn compare_reports_manifest_diffs_for_people_and_json() {
     assert!(stdout.contains("- Added outputs: `1`"));
     assert!(stdout.contains("- Removed outputs: `1`"));
     assert!(stdout.contains("- Changed outputs: `1`"));
+    assert!(stdout.contains("- Metadata-only output changes: `0`"));
     assert!(stdout.contains("- Unchanged outputs: `1`"));
     assert!(stdout.contains("card.project-card.960.webp` -> `public/images/generated/card.project-card.960.newhash.webp"));
     assert!(stdout.contains("## Top Byte Contributors"));
@@ -995,6 +997,7 @@ fn compare_reports_manifest_diffs_for_people_and_json() {
     assert_eq!(document["summary"]["added_count"], 1);
     assert_eq!(document["summary"]["removed_count"], 1);
     assert_eq!(document["summary"]["changed_count"], 1);
+    assert_eq!(document["summary"]["metadata_changed_count"], 0);
     assert_eq!(document["summary"]["unchanged_count"], 1);
     let top = document["top_byte_contributors"]
         .as_array()

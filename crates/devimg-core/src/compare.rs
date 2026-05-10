@@ -26,6 +26,7 @@ pub struct ManifestCompare {
     pub added: Vec<ManifestCompareOutput>,
     pub removed: Vec<ManifestCompareOutput>,
     pub changed: Vec<ManifestCompareChange>,
+    pub metadata_changed: Vec<ManifestCompareMetadataChange>,
     pub top_byte_contributors: Vec<ManifestCompareOutput>,
 }
 
@@ -40,6 +41,7 @@ pub struct ManifestCompareSummary {
     pub added_count: u64,
     pub removed_count: u64,
     pub changed_count: u64,
+    pub metadata_changed_count: u64,
     pub unchanged_count: u64,
 }
 
@@ -74,6 +76,20 @@ pub struct ManifestCompareChange {
     pub head_hash: String,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ManifestCompareMetadataChange {
+    pub source_path: String,
+    pub preset: String,
+    pub width: u32,
+    pub height: u32,
+    pub format: String,
+    pub output_path: String,
+    pub bytes: u64,
+    pub hash: String,
+    pub base_operation_hash: String,
+    pub head_operation_hash: String,
+}
+
 pub fn compare_manifests(
     base: &Manifest,
     head: &Manifest,
@@ -84,6 +100,7 @@ pub fn compare_manifests(
     let mut added = Vec::new();
     let mut removed = Vec::new();
     let mut changed = Vec::new();
+    let mut metadata_changed = Vec::new();
     let mut unchanged_count = 0u64;
 
     for (identity, base_output) in base_outputs {
@@ -91,6 +108,11 @@ pub fn compare_manifests(
             Some(head_output) => {
                 if outputs_match(base_output, head_output) {
                     unchanged_count += 1;
+                } else if outputs_match_except_operation_hash(base_output, head_output) {
+                    metadata_changed.push(ManifestCompareMetadataChange::from_outputs(
+                        base_output,
+                        head_output,
+                    ));
                 } else {
                     changed.push(ManifestCompareChange::from_outputs(
                         base_output,
@@ -127,11 +149,13 @@ pub fn compare_manifests(
             added_count: added.len() as u64,
             removed_count: removed.len() as u64,
             changed_count: changed.len() as u64,
+            metadata_changed_count: metadata_changed.len() as u64,
             unchanged_count,
         },
         added,
         removed,
         changed,
+        metadata_changed,
         top_byte_contributors,
     }
 }
@@ -178,6 +202,23 @@ impl ManifestCompareChange {
     }
 }
 
+impl ManifestCompareMetadataChange {
+    fn from_outputs(base: &ManifestOutput, head: &ManifestOutput) -> Self {
+        Self {
+            source_path: head.source_path.clone(),
+            preset: head.preset.clone(),
+            width: head.width,
+            height: head.height,
+            format: head.format.clone(),
+            output_path: head.output_path.clone(),
+            bytes: head.bytes,
+            hash: head.hash.clone(),
+            base_operation_hash: base.operation_hash.clone(),
+            head_operation_hash: head.operation_hash.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ManifestOutputIdentity {
     source_path: String,
@@ -208,6 +249,10 @@ fn outputs_by_identity(manifest: &Manifest) -> BTreeMap<ManifestOutputIdentity, 
 }
 
 fn outputs_match(base: &ManifestOutput, head: &ManifestOutput) -> bool {
+    outputs_match_except_operation_hash(base, head) && base.operation_hash == head.operation_hash
+}
+
+fn outputs_match_except_operation_hash(base: &ManifestOutput, head: &ManifestOutput) -> bool {
     base.source_hash == head.source_hash
         && base.source_width == head.source_width
         && base.source_height == head.source_height
@@ -216,7 +261,6 @@ fn outputs_match(base: &ManifestOutput, head: &ManifestOutput) -> bool {
         && base.fit == head.fit
         && base.bytes == head.bytes
         && base.hash == head.hash
-        && base.operation_hash == head.operation_hash
 }
 
 fn top_byte_contributors(manifest: &Manifest, limit: usize) -> Vec<ManifestCompareOutput> {
@@ -325,6 +369,7 @@ mod tests {
         assert_eq!(compare.summary.added_count, 1);
         assert_eq!(compare.summary.removed_count, 1);
         assert_eq!(compare.summary.changed_count, 1);
+        assert_eq!(compare.summary.metadata_changed_count, 0);
         assert_eq!(compare.summary.unchanged_count, 1);
         assert_eq!(
             compare.added[0].output_path,
@@ -345,6 +390,41 @@ mod tests {
         assert_eq!(compare.top_byte_contributors.len(), 2);
         assert_eq!(compare.top_byte_contributors[0].bytes, 260);
         assert_eq!(compare.top_byte_contributors[1].bytes, 100);
+    }
+
+    #[test]
+    fn compare_manifest_separates_metadata_only_operation_changes() {
+        let base = Manifest {
+            version: 1,
+            generated_at: "unix:1".to_string(),
+            config_path: "devimg.toml".to_string(),
+            config_hash: "blake3:base".to_string(),
+            outputs: vec![output(
+                "assets/card.png",
+                "project-card",
+                640,
+                360,
+                "webp",
+                100,
+                "same",
+            )],
+        };
+        let mut head = base.clone();
+        head.generated_at = "unix:2".to_string();
+        head.config_hash = "blake3:head".to_string();
+        head.outputs[0].operation_hash = "blake3:operation-new-metadata".to_string();
+
+        let compare = compare_manifests(&base, &head, ManifestCompareOptions::default());
+
+        assert_eq!(compare.summary.changed_count, 0);
+        assert_eq!(compare.summary.metadata_changed_count, 1);
+        assert_eq!(compare.summary.unchanged_count, 0);
+        assert_eq!(
+            compare.metadata_changed[0].output_path,
+            base.outputs[0].output_path
+        );
+        assert_eq!(compare.metadata_changed[0].bytes, 100);
+        assert_eq!(compare.metadata_changed[0].hash, "blake3:same");
     }
 
     #[test]
@@ -369,6 +449,7 @@ mod tests {
         let json = manifest_compare_to_json(&compare);
 
         assert!(json.contains("\"unchanged_count\": 1"));
+        assert!(json.contains("\"metadata_changed_count\": 0"));
         assert!(json.contains("\"top_byte_contributors\""));
     }
 

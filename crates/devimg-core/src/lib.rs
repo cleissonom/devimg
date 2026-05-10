@@ -18,7 +18,8 @@ mod warnings;
 
 pub use compare::{
     compare_manifests, manifest_compare_to_json, ManifestCompare, ManifestCompareChange,
-    ManifestCompareOptions, ManifestCompareOutput, ManifestCompareSummary,
+    ManifestCompareMetadataChange, ManifestCompareOptions, ManifestCompareOutput,
+    ManifestCompareSummary,
 };
 pub use config::{
     load_config, AspectRatio, BudgetConfig, Config, CropPosition, FitMode, FormatKind,

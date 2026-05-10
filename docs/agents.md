@@ -25,6 +25,8 @@ Use `[[warnings.acknowledge]]` only when the warning is intentional after visual
 
 `devimg optimize` may report skipped variants on unchanged runs. Treat skipped variants as successfully reused outputs, not as missing work. If stale variants are reported, continue with `devimg check` and `devimg doctor` to confirm whether the regenerated outputs and manifest are now current.
 
+When reviewing manifest diffs, treat `devimg compare` metadata-only output changes separately from real changed outputs. Metadata-only changes keep the same output path, bytes, and content hash, so they usually indicate config-only metadata or DevImg operation-hash normalization rather than an image quality change.
+
 Use `devimg review --stdout` when an agent needs static HTML context without creating a file. Use `--output .devimg/review.html` for a browser-openable local review artifact, and do not overwrite an existing artifact unless the user explicitly approves `--force`.
 
 In GitHub Actions, prefer the built-in `review-output` input plus `actions/upload-artifact` for CI visual review artifacts. Do not add PR comment bots or automatic commits unless the maintainer explicitly asks for that workflow.

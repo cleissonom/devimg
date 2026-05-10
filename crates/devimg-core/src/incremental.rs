@@ -7,6 +7,7 @@ use crate::config::{resolve_project_path_checked, Config};
 use crate::hash::hash_file;
 use crate::manifest::{read_manifest, Manifest, ManifestOutput};
 use crate::pipeline::Operation;
+use crate::plan::legacy_operation_hash;
 use crate::transform::final_output_project_path;
 use crate::Result;
 
@@ -17,15 +18,11 @@ pub(crate) enum IncrementalLookup {
 
 pub(crate) enum IncrementalCache {
     Current(CurrentManifestCache),
-    StaleConfig,
 }
 
 impl IncrementalCache {
-    pub(crate) fn read(config: &Config, manifest_path: &Path) -> Option<Self> {
+    pub(crate) fn read(_config: &Config, manifest_path: &Path) -> Option<Self> {
         let manifest = read_manifest(manifest_path).ok()?;
-        if manifest.config_hash != config.config_hash {
-            return Some(Self::StaleConfig);
-        }
         Some(Self::Current(CurrentManifestCache::new(manifest)))
     }
 
@@ -36,7 +33,6 @@ impl IncrementalCache {
     ) -> Result<IncrementalLookup> {
         match self {
             Self::Current(cache) => cache.lookup_current(config, operation),
-            Self::StaleConfig => Ok(IncrementalLookup::Stale),
         }
     }
 }
@@ -84,14 +80,19 @@ impl CurrentManifestCache {
             return Ok(None);
         };
         let output = &self.manifest.outputs[*index];
-        if output.operation_hash != operation.operation_hash {
+        if !operation_hash_matches(output, operation, &self.manifest.config_hash) {
             return Ok(None);
         }
         Ok(Some(output))
     }
 
     fn hashed_manifest_output(&self, operation: &Operation) -> Result<Option<&ManifestOutput>> {
-        let Some(indexes) = self.by_operation_hash.get(&operation.operation_hash) else {
+        let legacy_hash = legacy_operation_hash(operation, &self.manifest.config_hash);
+        let Some(indexes) = self
+            .by_operation_hash
+            .get(&operation.operation_hash)
+            .or_else(|| self.by_operation_hash.get(&legacy_hash))
+        else {
             return Ok(None);
         };
         if indexes.len() != 1 {
@@ -136,5 +137,15 @@ fn current_output(
     let mut current = output.clone();
     current.bytes = metadata.len();
     current.hash = actual_hash;
+    current.operation_hash = operation.operation_hash.clone();
     Ok(Some(current))
+}
+
+fn operation_hash_matches(
+    output: &ManifestOutput,
+    operation: &Operation,
+    manifest_config_hash: &str,
+) -> bool {
+    output.operation_hash == operation.operation_hash
+        || output.operation_hash == legacy_operation_hash(operation, manifest_config_hash)
 }

@@ -46,8 +46,8 @@ pub(crate) fn inspect_frameworks(
         warnings.push(warning(
             "framework_next_image_double_optimization",
             &config.path,
-            "Next.js was detected with generated assets under public/; next/image or hosting image optimization may reprocess already-generated variants",
-            "Use generated variants through img/picture or configure Next image usage intentionally to avoid double optimization.",
+            "Next.js was detected with generated assets under public/. These files are static assets that Vercel/CDNs can cache directly, but next/image may optimize them again if they are rendered through Image.",
+            "Use generated variants through img/picture or set unoptimized on Next Image when DevImg owns resizing and quality. If Next Image optimization is intentional, keep DevImg focused on deterministic source variants, content hashes, budgets, and manifest checks.",
         ));
     }
 
@@ -235,6 +235,25 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.code == "framework_manifest_export_missing"));
+        cleanup(&root);
+    }
+
+    #[test]
+    fn next_public_output_warning_explains_static_assets_and_cdn_behavior() {
+        let root = temp_project("framework_next_copy");
+        fs::write(root.join("next.config.mjs"), "export default {}\n").expect("next config writes");
+        let config = config(&root, "content_hash_filenames = true");
+
+        let report = inspect_frameworks(&config, true);
+        let warning = report
+            .warnings
+            .iter()
+            .find(|warning| warning.code == "framework_next_image_double_optimization")
+            .expect("next warning exists");
+
+        assert!(warning.message.contains("static assets"));
+        assert!(warning.message.contains("Vercel/CDNs"));
+        assert!(warning.hint.contains("unoptimized"));
         cleanup(&root);
     }
 

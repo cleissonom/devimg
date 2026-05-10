@@ -41,7 +41,7 @@ devimg check --config devimg.toml
 devimg doctor --config devimg.toml --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 ```
 
-Repeated `optimize` runs are incremental. When the current manifest and output file prove a variant is already fresh, DevImg skips the expensive decode/resize/encode work and reports the skipped count. If config, source bytes, output bytes, or dimensions are stale, DevImg falls back to normal generation and keeps the existing safe-overwrite rules.
+Repeated `optimize` runs are incremental. When the current manifest and output file prove a variant is already fresh, DevImg skips the expensive decode/resize/encode work and reports the skipped count. Operation hashes track transform inputs rather than every config byte, so config-only metadata changes such as warning acknowledgements can refresh the manifest/report without re-encoding unchanged images. If transform settings, source bytes, output bytes, or dimensions are stale, DevImg falls back to normal generation and keeps the existing safe-overwrite rules.
 
 ## Examples
 
@@ -171,7 +171,7 @@ devimg optimize --config devimg.toml --allow-overwrite
 devimg compare --base /tmp/devimg-base-manifest.json --head public/images/devimg-manifest.json
 ```
 
-The human report shows variant count delta, output byte delta, added outputs, removed outputs, changed outputs, unchanged outputs, and the largest head-manifest byte contributors. Use JSON output for CI or AI agents:
+The human report shows variant count delta, output byte delta, added outputs, removed outputs, changed outputs, metadata-only output changes, unchanged outputs, and the largest head-manifest byte contributors. Metadata-only changes mean the output path, bytes, and content hash stayed the same while operation metadata changed, which is useful when reviewing config-only or DevImg-version metadata updates separately from real image changes. Use JSON output for CI or AI agents:
 
 ```bash
 devimg compare \
@@ -239,7 +239,7 @@ Acknowledged warnings move to an `Acknowledged Warnings` section in reports and 
 - Astro
 - Vite
 
-Framework diagnostics are advisory warnings. They do not change image generation and do not fail `doctor` by themselves. Current hints cover mixed framework detection, possible Next.js double optimization, public generated outputs without content-hash filenames, and content-hash filenames without a checked-in manifest export passed through `--export-output`.
+Framework diagnostics are advisory warnings. They do not change image generation and do not fail `doctor` by themselves. Current hints cover mixed framework detection, public generated outputs without content-hash filenames, and content-hash filenames without a checked-in manifest export passed through `--export-output`. For Next.js projects, DevImg explains that generated files under `public/` are static assets that Vercel/CDNs can cache directly, while `next/image` may optimize them again unless the app intentionally uses `img`/`picture` or `Image` with `unoptimized`.
 
 For `fit = "cover"`, `crop` controls which part of the resized image is preserved when the aspect ratio requires cropping. It defaults to `center`. Use anchors such as `top`, `bottom`, `left`, `right`, `top-left`, or a normalized focal point:
 
@@ -301,7 +301,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.11
+      - uses: cleissonom/devimg/action@v0.1.12
         with:
           config: devimg.toml
           mode: check
@@ -338,8 +338,8 @@ cargo test --all
 Create a version tag that matches the workspace version and push it:
 
 ```bash
-git tag v0.1.11
-git push origin v0.1.11
+git tag v0.1.12
+git push origin v0.1.12
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

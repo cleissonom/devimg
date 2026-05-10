@@ -80,13 +80,16 @@ pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
                     let output_project_path =
                         path_to_string(&project_relative(config, &output_path));
                     let op_hash = operation_hash(
-                        config,
                         source,
                         &effective_preset,
                         *format,
                         target_width,
                         target_height,
                         &output_project_path,
+                        OperationHashOptions {
+                            strip_metadata: config.project.strip_metadata,
+                            content_hash_filenames: config.project.content_hash_filenames,
+                        },
                     );
                     operations.push(Operation {
                         source: source.clone(),
@@ -97,6 +100,7 @@ pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
                         format: *format,
                         width: target_width,
                         height: target_height,
+                        strip_metadata: config.project.strip_metadata,
                         content_hash_filenames: config.project.content_hash_filenames,
                         output_path,
                         output_project_path,
@@ -182,17 +186,16 @@ fn target_dimensions(
 }
 
 fn operation_hash(
-    config: &Config,
     source: &SourceImage,
     preset: &PresetConfig,
     format: FormatKind,
     width: u32,
     height: u32,
     output_path: &str,
+    options: OperationHashOptions,
 ) -> String {
     let mut input = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-        config.config_hash,
+        "operation-hash-v2|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         source.hash,
         source.project_path,
         output_path,
@@ -203,13 +206,45 @@ fn operation_hash(
         width,
         height,
         format.label(),
-        config.project.strip_metadata,
+        options.strip_metadata,
     );
     if let Some(component) = encoder_hash_component(format) {
         input.push('|');
         input.push_str(component);
     }
-    if config.project.content_hash_filenames {
+    if options.content_hash_filenames {
+        input.push_str("|filename:content-hash-v1");
+    }
+    hash_bytes(input.as_bytes())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OperationHashOptions {
+    strip_metadata: bool,
+    content_hash_filenames: bool,
+}
+
+pub(crate) fn legacy_operation_hash(operation: &Operation, config_hash: &str) -> String {
+    let mut input = format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        config_hash,
+        operation.source.hash,
+        operation.source.project_path,
+        operation.output_project_path,
+        operation.preset,
+        operation.fit.label(),
+        operation.crop.label(),
+        operation.quality,
+        operation.width,
+        operation.height,
+        operation.format.label(),
+        operation.strip_metadata,
+    );
+    if let Some(component) = encoder_hash_component(operation.format) {
+        input.push('|');
+        input.push_str(component);
+    }
+    if operation.content_hash_filenames {
         input.push_str("|filename:content-hash-v1");
     }
     hash_bytes(input.as_bytes())

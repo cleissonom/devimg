@@ -1,4 +1,6 @@
-use crate::compare::{ManifestCompare, ManifestCompareChange, ManifestCompareOutput};
+use crate::compare::{
+    ManifestCompare, ManifestCompareChange, ManifestCompareMetadataChange, ManifestCompareOutput,
+};
 use crate::doctor::DoctorReport;
 use crate::manifest::Manifest;
 use crate::pipeline::OptimizeResult;
@@ -119,6 +121,10 @@ pub fn render_manifest_compare_report(compare: &ManifestCompare) -> String {
     out.push_str(&format!("- Removed outputs: `{}`\n", summary.removed_count));
     out.push_str(&format!("- Changed outputs: `{}`\n", summary.changed_count));
     out.push_str(&format!(
+        "- Metadata-only output changes: `{}`\n",
+        summary.metadata_changed_count
+    ));
+    out.push_str(&format!(
         "- Unchanged outputs: `{}`\n",
         summary.unchanged_count
     ));
@@ -135,6 +141,18 @@ pub fn render_manifest_compare_report(compare: &ManifestCompare) -> String {
     } else {
         for change in &compare.changed {
             push_changed_output(&mut out, change);
+        }
+    }
+
+    out.push_str("\n## Metadata-Only Output Changes\n\n");
+    if compare.metadata_changed.is_empty() {
+        out.push_str("No metadata-only output changes.\n");
+    } else {
+        out.push_str(
+            "These outputs kept the same path, bytes, and content hash; only operation metadata changed.\n\n",
+        );
+        for change in &compare.metadata_changed {
+            push_metadata_changed_output(&mut out, change);
         }
     }
 
@@ -271,6 +289,19 @@ fn push_changed_output(out: &mut String, change: &ManifestCompareChange) {
         format_signed(change.byte_delta),
         fit_change,
         path_change
+    ));
+}
+
+fn push_metadata_changed_output(out: &mut String, change: &ManifestCompareMetadataChange) {
+    out.push_str(&format!(
+        "- `{}` preset `{}` {}x{} {}: `{}` ({} bytes)\n",
+        change.source_path,
+        change.preset,
+        change.width,
+        change.height,
+        change.format,
+        change.output_path,
+        change.bytes
     ));
 }
 

@@ -146,7 +146,7 @@ Acknowledgements are matched by warning `code` plus optional `source`, `output`,
 
 Acknowledged warnings are still reported under `Acknowledged Warnings` and in `doctor --json` as `acknowledged_warnings`. `devimg check --fail-on-warning` passes when only acknowledged warnings remain and fails when a new unacknowledged warning appears.
 
-After adding or changing acknowledgements, run `devimg optimize --config devimg.toml` once so the manifest and report carry the current config hash.
+After adding or changing acknowledgements, run `devimg optimize --config devimg.toml` once so the manifest and report carry the current config hash. DevImg can reuse existing outputs when only acknowledgement metadata changed, so this refresh should update manifest/report metadata without re-encoding unchanged images.
 
 ## Framework Diagnostics
 

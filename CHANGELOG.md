@@ -6,6 +6,13 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 No unreleased changes.
 
+## 0.1.12
+
+- Changed operation hashing to be transform-focused, so warning acknowledgements and other non-transform config metadata do not make every planned output look changed.
+- Improved incremental optimize reuse when a config hash changes but existing outputs still match the current transform plan.
+- Added manifest compare reporting for metadata-only output changes, separate from byte/path/content changes.
+- Clarified Next.js/Vercel framework diagnostics around static generated assets, `next/image`, and CDN caching.
+
 ## 0.1.11
 
 - Added scoped `[[warnings.acknowledge]]` support for reviewed advisory warnings.
