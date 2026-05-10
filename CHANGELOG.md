@@ -6,6 +6,13 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 No unreleased changes.
 
+## 0.1.11
+
+- Added scoped `[[warnings.acknowledge]]` support for reviewed advisory warnings.
+- Added stable warning codes such as `quality:cover-crop` and `quality:low-lossy-quality`.
+- Updated `check --fail-on-warning` so acknowledged warnings remain visible but do not fail strict checks.
+- Added `doctor --json` `acknowledged_warnings` output.
+
 ## 0.1.10
 
 - Added static visual review artifacts through `devimg review`.

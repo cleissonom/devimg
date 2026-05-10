@@ -12,7 +12,7 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["review", "--help"]), 0);
     let version = run(["--version"]);
     assert_status(&version, 0);
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.10"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.11"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -1103,7 +1103,66 @@ max_total_bytes = "5mb"
         .as_array()
         .expect("warnings array")
         .iter()
-        .any(|warning| warning["code"] == "quality_warning"));
+        .any(|warning| warning["code"] == "quality:low-lossy-quality"));
+    cleanup(&project);
+}
+
+#[test]
+fn acknowledged_crop_warnings_remain_visible_but_do_not_fail_strict_check() {
+    let project = temp_project("acknowledged_crop_warning");
+    let source = project.join("assets/images/accesstrace.png");
+    fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+    fs::copy(fixture_image(), &source).expect("copy fixture image");
+    let config_path = project.join("devimg.toml");
+    fs::write(&config_path, crop_warning_config("")).expect("write unacknowledged config");
+    let config = path_arg(config_path.clone());
+
+    let optimize = run(["optimize", "--config", config.as_str()]);
+    assert_status(&optimize, 0);
+    assert!(String::from_utf8_lossy(&optimize.stdout).contains("quality:cover-crop"));
+    let strict_check = run(["check", "--config", config.as_str(), "--fail-on-warning"]);
+    assert_status(&strict_check, 3);
+    assert!(String::from_utf8_lossy(&strict_check.stderr).contains("quality:cover-crop"));
+    let doctor = run(["doctor", "--config", config.as_str(), "--json"]);
+    assert_status(&doctor, 0);
+    let document: serde_json::Value =
+        serde_json::from_slice(&doctor.stdout).expect("doctor JSON parses");
+    assert_diagnostic_code(&document["warnings"], "quality:cover-crop");
+    assert!(document["acknowledged_warnings"]
+        .as_array()
+        .expect("acknowledged warnings array")
+        .is_empty());
+
+    fs::write(
+        &config_path,
+        crop_warning_config(
+            r#"
+[[warnings.acknowledge]]
+code = "quality:cover-crop"
+source = "assets/images/accesstrace.png"
+preset = "project-card"
+reason = "Intentional project-card framing for this asset."
+"#,
+        ),
+    )
+    .expect("write acknowledged config");
+    assert_status(&run(["optimize", "--config", config.as_str()]), 0);
+    let strict_check = run(["check", "--config", config.as_str(), "--fail-on-warning"]);
+    assert_status(&strict_check, 0);
+    let stdout = String::from_utf8_lossy(&strict_check.stdout);
+    assert!(stdout.contains("Acknowledged Warnings"));
+    assert!(stdout.contains("quality:cover-crop"));
+
+    let doctor = run(["doctor", "--config", config.as_str(), "--json"]);
+    assert_status(&doctor, 0);
+    let document: serde_json::Value =
+        serde_json::from_slice(&doctor.stdout).expect("doctor JSON parses");
+    assert!(!document["warnings"]
+        .as_array()
+        .expect("warnings array")
+        .iter()
+        .any(|warning| warning["code"] == "quality:cover-crop"));
+    assert_diagnostic_code(&document["acknowledged_warnings"], "quality:cover-crop");
     cleanup(&project);
 }
 
@@ -1450,6 +1509,34 @@ fn write_project_config(project: &Path, width: u32, project_settings: &str, budg
         config_text_with_width(width, project_settings, budget_line),
     )
     .expect("write config");
+}
+
+fn crop_warning_config(warning_settings: &str) -> String {
+    format!(
+        r#"[project]
+root = "."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png"]
+
+[[preset]]
+name = "project-card"
+widths = [120]
+formats = ["webp"]
+quality = 90
+fit = "cover"
+aspect_ratio = "1:1"
+
+[budgets]
+max_total_bytes = "5mb"
+{warning_settings}
+"#
+    )
 }
 
 fn fixture_image() -> PathBuf {

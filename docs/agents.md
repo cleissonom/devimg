@@ -19,7 +19,9 @@ If the generated TypeScript helper was created with `--typescript-helpers`, use 
 
 Use `devimg doctor --json` when an agent or CI job needs deterministic machine-readable state.
 
-Treat `quality_warning` entries as prompts for review, not as permission to auto-tune images. Prefer proposing explicit `devimg.toml` changes such as raising `quality`, reducing `widths`, changing `fit`/`crop`, using `fit = "contain"`, or replacing a too-small source image.
+Treat warning entries such as `quality:cover-crop` or `quality:low-lossy-quality` as prompts for review, not as permission to auto-tune images. Prefer proposing explicit `devimg.toml` changes such as raising `quality`, reducing `widths`, changing `fit`/`crop`, using `fit = "contain"`, or replacing a too-small source image.
+
+Use `[[warnings.acknowledge]]` only when the warning is intentional after visual review. Keep acknowledgements scoped to the exact `source`/`preset` or `output`, include a human-readable `reason`, and do not add broad acknowledgements that silence future warnings across a project.
 
 `devimg optimize` may report skipped variants on unchanged runs. Treat skipped variants as successfully reused outputs, not as missing work. If stale variants are reported, continue with `devimg check` and `devimg doctor` to confirm whether the regenerated outputs and manifest are now current.
 

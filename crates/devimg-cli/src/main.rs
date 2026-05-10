@@ -791,7 +791,8 @@ fn codex_agent_instructions(config: &str) -> String {
 - When crop or quality needs visual review, run `devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html`.
 - Run `devimg check --config {config}` before finishing.
 - Run `devimg doctor --config {config}` again to confirm the project is healthy.
-- Treat `quality_warning` output as a review signal; do not silently auto-tune config without user approval.
+- Treat warning output such as `quality:cover-crop` or `quality:low-lossy-quality` as a review signal; do not silently auto-tune config without user approval.
+- Use `[[warnings.acknowledge]]` only after visual review, scoped to the exact source/preset or output, with a human-readable reason.
 - If this repository has `docs/agent-contract.md`, follow it as the DevImg file ownership policy.
 - Commit generated image variants, `devimg-manifest.json`, `devimg-report.md`, and checked-in manifest helper files together.
 - Do not edit generated image variants, manifests, reports, or generated helper modules by hand.
@@ -825,7 +826,8 @@ Use these instructions when working with generated web image assets.
 - Include `--typescript-helpers` when the checked-in TypeScript helper uses generated lookup functions.
 - Run `devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html` when crop or quality needs visual review.
 - Validate with `devimg check --config {config}` and then run `devimg doctor --config {config}` again.
-- Treat `quality_warning` output as a review signal; do not silently auto-tune config without user approval.
+- Treat warning output such as `quality:cover-crop` or `quality:low-lossy-quality` as a review signal; do not silently auto-tune config without user approval.
+- Use `[[warnings.acknowledge]]` only after visual review, scoped to the exact source/preset or output, with a human-readable reason.
 - If this repository has `docs/agent-contract.md`, follow it as the DevImg file ownership policy.
 - Commit generated image variants, `devimg-manifest.json`, `devimg-report.md`, and checked-in manifest helper files together.
 - Never hand-edit generated image variants, manifests, reports, or generated helper modules.
@@ -869,7 +871,8 @@ Rules:
 
 - Do not hand-edit generated variants, manifests, reports, or helper modules.
 - Do not overwrite existing agent instruction files, Claude commands, or Codex skills without explicit user approval.
-- Treat `quality_warning` output as a review signal; do not silently auto-tune config without user approval.
+- Treat warning output such as `quality:cover-crop` or `quality:low-lossy-quality` as a review signal; do not silently auto-tune config without user approval.
+- Use `[[warnings.acknowledge]]` only after visual review, scoped to the exact source/preset or output, with a human-readable reason.
 - If this repository has `docs/agent-contract.md`, follow it as the DevImg file ownership policy.
 - Report changed generated files and verification results.
 "#

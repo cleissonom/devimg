@@ -49,7 +49,9 @@ If a TypeScript helper file was generated with `--typescript-helpers`, use that 
 
 - Treat `issues` from `devimg doctor --json` as required work.
 - Treat `warnings` as review signals.
+- Treat `acknowledged_warnings` as reviewed exceptions that must remain narrow and explained in config.
 - Do not silently auto-tune `quality`, `widths`, `fit`, `crop`, `allow_upscale`, or budgets. Make explicit config changes and explain them.
+- Do not add broad `[[warnings.acknowledge]]` entries. Acknowledge only a specific source/preset or output after visual review.
 - Use `devimg check --fail-on-warning` only when the project has chosen warnings as CI blockers.
 - Use `devimg review --stdout` when a tool needs HTML context without creating a file.
 

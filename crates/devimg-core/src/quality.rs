@@ -1,6 +1,10 @@
 use crate::config::{CropPosition, FitMode, FormatKind, PresetConfig};
 use crate::manifest::Manifest;
 use crate::pipeline::SourceImage;
+use crate::warnings::{
+    warning_message, QUALITY_ALLOWED_UPSCALE, QUALITY_COVER_CROP, QUALITY_GENERATED_UPSCALE,
+    QUALITY_LOW_LOSSY, QUALITY_OUTPUT_LARGER_THAN_SOURCE, QUALITY_SKIPPED_UPSCALE,
+};
 
 const DETAIL_SENSITIVE_KEYWORDS: &[&str] = &[
     "banner",
@@ -45,14 +49,17 @@ pub(crate) fn lossy_quality_warnings(source: &SourceImage, preset: &PresetConfig
         } else {
             "general lossy output"
         };
-        warnings.push(format!(
-            "quality: {} preset {} uses {} quality {} below the suggested minimum {} for {}; raise quality or use png when crisp text/graphics matter",
+        warnings.push(warning_message(
+            QUALITY_LOW_LOSSY,
+            format!(
+                "{} preset {} uses {} quality {} below the suggested minimum {} for {}; raise quality or use png when crisp text/graphics matter",
             source.project_path,
             preset.name,
             format.label(),
             preset.quality,
             minimum,
             reason
+            ),
         ));
     }
     warnings
@@ -65,8 +72,10 @@ pub(crate) fn skipped_upscale_warning(
     target_width: u32,
     target_height: u32,
 ) -> String {
-    format!(
-        "quality: skipped {} preset {} width {} because it would require upscaling from {}x{} to {}x{}; provide a larger source, reduce widths, or set allow_upscale=true if softness is acceptable",
+    warning_message(
+        QUALITY_SKIPPED_UPSCALE,
+        format!(
+            "skipped {} preset {} width {} because it would require upscaling from {}x{} to {}x{}; provide a larger source, reduce widths, or set allow_upscale=true if softness is acceptable",
         source.project_path,
         preset.name,
         requested_width,
@@ -74,6 +83,7 @@ pub(crate) fn skipped_upscale_warning(
         source.height,
         target_width,
         target_height
+        ),
     )
 }
 
@@ -88,8 +98,10 @@ pub(crate) fn allowed_upscale_warning(
         return None;
     }
 
-    Some(format!(
-        "quality: {} preset {} width {} allows upscaling from {}x{} to {}x{}; generated images may look soft, so prefer a larger source or reduce widths",
+    Some(warning_message(
+        QUALITY_ALLOWED_UPSCALE,
+        format!(
+            "{} preset {} width {} allows upscaling from {}x{} to {}x{}; generated images may look soft, so prefer a larger source or reduce widths",
         source.project_path,
         preset.name,
         requested_width,
@@ -97,6 +109,7 @@ pub(crate) fn allowed_upscale_warning(
         source.height,
         target_width,
         target_height
+        ),
     ))
 }
 
@@ -121,13 +134,16 @@ pub(crate) fn cover_crop_warning(
     } else {
         "confirm the crop anchor/focal point"
     };
-    Some(format!(
-        "quality: {} preset {} width {} uses cover and crops about {}% of the resized image; {}, or use fit=contain if the full composition must remain visible",
+    Some(warning_message(
+        QUALITY_COVER_CROP,
+        format!(
+            "{} preset {} width {} uses cover and crops about {}% of the resized image; {}, or use fit=contain if the full composition must remain visible",
         source.project_path,
         preset.name,
         requested_width,
         (loss * 100.0).round() as u32,
         crop_hint
+        ),
     ))
 }
 
@@ -135,21 +151,27 @@ pub(crate) fn manifest_quality_warnings(manifest: &Manifest) -> Vec<String> {
     let mut warnings = Vec::new();
     for output in &manifest.outputs {
         if output.width > output.source_width || output.height > output.source_height {
-            warnings.push(format!(
-                "quality: {} is {}x{} from a {}x{} source; generated images may look soft, so use a larger source or reduce configured widths",
+            warnings.push(warning_message(
+                QUALITY_GENERATED_UPSCALE,
+                format!(
+                    "{} is {}x{} from a {}x{} source; generated images may look soft, so use a larger source or reduce configured widths",
                 output.output_path,
                 output.width,
                 output.height,
                 output.source_width,
                 output.source_height
+                ),
             ));
         }
         if output.bytes > output.source_bytes {
-            warnings.push(format!(
-                "quality: {} is larger than its source file ({} vs {}); this can happen with small optimized sources, high quality settings, format changes, or graphic/transparent assets",
+            warnings.push(warning_message(
+                QUALITY_OUTPUT_LARGER_THAN_SOURCE,
+                format!(
+                    "{} is larger than its source file ({} vs {}); this can happen with small optimized sources, high quality settings, format changes, or graphic/transparent assets",
                 output.output_path,
                 format_bytes(output.bytes),
                 format_bytes(output.source_bytes)
+                ),
             ));
         }
     }

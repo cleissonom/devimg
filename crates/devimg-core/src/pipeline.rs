@@ -12,6 +12,7 @@ use crate::quality::{append_unique, manifest_quality_warnings};
 use crate::report::render_run_report;
 pub use crate::scan::{inspect_image, scan_sources};
 use crate::transform::execute_operation;
+use crate::warnings::{split_acknowledged_warnings, warning_message, BUDGET_FAILED};
 use crate::{DevimgError, Result};
 
 #[derive(Debug, Clone)]
@@ -68,6 +69,7 @@ pub struct OptimizeResult {
     pub source_bytes: u64,
     pub output_bytes: u64,
     pub warnings: Vec<String>,
+    pub acknowledged_warnings: Vec<String>,
     pub issues: Vec<CheckIssue>,
     pub budget_status: String,
     pub manifest: Manifest,
@@ -108,6 +110,7 @@ pub fn optimize(config: &Config, options: OptimizeOptions) -> Result<OptimizeRes
     .to_string();
 
     if options.dry_run {
+        let warning_groups = split_acknowledged_warnings(config, plan.warnings);
         let result = OptimizeResult {
             mode,
             source_count: sources.len(),
@@ -117,7 +120,8 @@ pub fn optimize(config: &Config, options: OptimizeOptions) -> Result<OptimizeRes
             stale_count: 0,
             source_bytes,
             output_bytes: 0,
-            warnings: plan.warnings,
+            warnings: warning_groups.active,
+            acknowledged_warnings: warning_groups.acknowledged,
             issues: Vec::new(),
             budget_status: "not evaluated during dry-run".to_string(),
             manifest: Manifest::new(
@@ -168,11 +172,15 @@ pub fn optimize(config: &Config, options: OptimizeOptions) -> Result<OptimizeRes
     let output_bytes = manifest.output_bytes_total();
     append_unique(&mut warnings, manifest_quality_warnings(&manifest));
     if !issues.is_empty() {
-        warnings.push(format!(
-            "budget status is fail with {} issue(s); `devimg check` will fail",
-            issues.len()
+        warnings.push(warning_message(
+            BUDGET_FAILED,
+            format!(
+                "budget status is fail with {} issue(s); `devimg check` will fail",
+                issues.len()
+            ),
         ));
     }
+    let warning_groups = split_acknowledged_warnings(config, warnings);
 
     let result = OptimizeResult {
         mode,
@@ -183,7 +191,8 @@ pub fn optimize(config: &Config, options: OptimizeOptions) -> Result<OptimizeRes
         stale_count,
         source_bytes,
         output_bytes,
-        warnings,
+        warnings: warning_groups.active,
+        acknowledged_warnings: warning_groups.acknowledged,
         issues,
         budget_status,
         manifest,

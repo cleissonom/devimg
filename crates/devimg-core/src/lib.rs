@@ -14,6 +14,7 @@ mod report;
 mod review;
 mod scan;
 mod transform;
+mod warnings;
 
 pub use compare::{
     compare_manifests, manifest_compare_to_json, ManifestCompare, ManifestCompareChange,
@@ -21,7 +22,8 @@ pub use compare::{
 };
 pub use config::{
     load_config, AspectRatio, BudgetConfig, Config, CropPosition, FitMode, FormatKind,
-    PresetConfig, PresetOverrideConfig, ProjectConfig, SourceConfig,
+    PresetConfig, PresetOverrideConfig, ProjectConfig, SourceConfig, WarningAcknowledgementConfig,
+    WarningConfig,
 };
 pub use doctor::{
     doctor, doctor_report_to_json, DoctorBudget, DoctorCheck, DoctorDiagnostic,

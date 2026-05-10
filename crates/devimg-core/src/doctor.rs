@@ -11,6 +11,7 @@ use crate::manifest::{
     ManifestExportOptions, ManifestTypescriptOptions,
 };
 use crate::pipeline::{path_to_string, CheckIssue};
+use crate::warnings::warning_info;
 use crate::{build_plan, scan_sources, DevimgError, Result};
 
 #[derive(Debug, Clone, Default)]
@@ -49,6 +50,7 @@ pub struct DoctorReport {
     pub budget: DoctorBudget,
     pub checks: Vec<DoctorCheck>,
     pub warnings: Vec<DoctorDiagnostic>,
+    pub acknowledged_warnings: Vec<DoctorDiagnostic>,
     pub issues: Vec<DoctorDiagnostic>,
     pub next_command: String,
 }
@@ -93,6 +95,7 @@ pub fn doctor(config: &Config, options: DoctorOptions) -> Result<DoctorReport> {
     let report_project_path = path_to_string(&project_relative(config, &report_path));
     let mut checks = Vec::new();
     let mut warnings = Vec::new();
+    let mut acknowledged_warnings = Vec::new();
     let mut issues = Vec::new();
     let manifest_export_configured = options.manifest_export.is_some();
 
@@ -201,6 +204,10 @@ pub fn doctor(config: &Config, options: DoctorOptions) -> Result<DoctorReport> {
                 for warning in check_result.result.warnings {
                     warnings.push(warning_diagnostic(&warning, &config_path));
                 }
+                for warning in check_result.result.acknowledged_warnings {
+                    acknowledged_warnings
+                        .push(acknowledged_warning_diagnostic(&warning, &config_path));
+                }
                 for issue in check_result.result.issues {
                     issues.push(check_issue_diagnostic(&issue, &config_path));
                 }
@@ -257,6 +264,7 @@ pub fn doctor(config: &Config, options: DoctorOptions) -> Result<DoctorReport> {
         budget,
         checks,
         warnings,
+        acknowledged_warnings,
         issues,
         next_command,
     })
@@ -458,20 +466,33 @@ fn check_issue_diagnostic(issue: &CheckIssue, config_path: &str) -> DoctorDiagno
 }
 
 fn warning_diagnostic(warning: &str, config_path: &str) -> DoctorDiagnostic {
-    if warning.starts_with("quality:") {
+    let info = warning_info(warning);
+    let path = info
+        .source
+        .or(info.output)
+        .unwrap_or_else(|| config_path.to_string());
+    if info.code.starts_with("quality:") {
         return diagnostic(
-            "quality_warning",
-            config_path,
+            info.code,
+            path,
             warning,
             "Tune preset quality, fit/crop, widths, or source assets in devimg.toml, then run `devimg doctor` again.",
         );
     }
     diagnostic(
-        "plan_warning",
-        config_path,
+        info.code,
+        path,
         warning,
         "Review the preset/source config, then run `devimg doctor` again.",
     )
+}
+
+fn acknowledged_warning_diagnostic(warning: &str, config_path: &str) -> DoctorDiagnostic {
+    let mut diagnostic = warning_diagnostic(warning, config_path);
+    diagnostic.hint =
+        "Acknowledged in devimg.toml. Keep the acknowledgement narrow and revisit it when the source image or preset changes."
+            .to_string();
+    diagnostic
 }
 
 fn framework_warning_diagnostic(warning: FrameworkWarning) -> DoctorDiagnostic {

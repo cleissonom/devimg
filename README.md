@@ -217,7 +217,19 @@ Use stricter CI when warnings should block a branch:
 devimg check --config devimg.toml --fail-on-warning
 ```
 
-Use `devimg doctor --json` when an AI agent or CI tool needs machine-readable `quality_warning` entries. Use `devimg review` for manifest-only visual checks of upscaled outputs and output-size surprises.
+Use `devimg doctor --json` when an AI agent or CI tool needs machine-readable warning entries such as `quality:cover-crop` or `quality:low-lossy-quality`. Use `devimg review` for manifest-only visual checks of upscaled outputs and output-size surprises.
+
+When a warning is intentional, acknowledge it narrowly instead of weakening the preset for every image:
+
+```toml
+[[warnings.acknowledge]]
+code = "quality:cover-crop"
+source = "assets/images/accesstrace.png"
+preset = "project-card"
+reason = "Intentional card framing after visual review."
+```
+
+Acknowledged warnings move to an `Acknowledged Warnings` section in reports and `acknowledged_warnings` in `doctor --json`. They remain visible, but `devimg check --fail-on-warning` only fails on unacknowledged warnings. Prefer changing `quality`, `widths`, `fit`, `crop`, `allow_upscale`, or source assets when the warning represents a real regression.
 
 ## Framework Diagnostics
 
@@ -289,7 +301,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.10
+      - uses: cleissonom/devimg/action@v0.1.11
         with:
           config: devimg.toml
           mode: check
@@ -326,8 +338,8 @@ cargo test --all
 Create a version tag that matches the workspace version and push it:
 
 ```bash
-git tag v0.1.10
-git push origin v0.1.10
+git tag v0.1.11
+git push origin v0.1.11
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

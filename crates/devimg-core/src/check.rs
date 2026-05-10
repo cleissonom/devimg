@@ -11,6 +11,7 @@ use crate::pipeline::{
 };
 use crate::quality::{append_unique, manifest_quality_warnings};
 use crate::transform::final_output_project_path;
+use crate::warnings::split_acknowledged_warnings;
 use crate::{build_plan, scan_sources, DevimgError, Result};
 
 #[derive(Debug, Clone, Copy)]
@@ -144,6 +145,7 @@ pub fn check_with_options(config: &Config, options: CheckOptions) -> Result<Chec
     );
     let mut warnings = plan.warnings;
     append_unique(&mut warnings, manifest_quality_warnings(&result_manifest));
+    let warning_groups = split_acknowledged_warnings(config, warnings);
     let result = OptimizeResult {
         mode: "check".to_string(),
         source_count: sources.len(),
@@ -153,7 +155,8 @@ pub fn check_with_options(config: &Config, options: CheckOptions) -> Result<Chec
         stale_count: issues.iter().filter(|issue| issue.kind == "stale").count(),
         source_bytes: unique_source_bytes(&sources),
         output_bytes: total_output_bytes,
-        warnings,
+        warnings: warning_groups.active,
+        acknowledged_warnings: warning_groups.acknowledged,
         issues,
         budget_status,
         manifest: result_manifest,

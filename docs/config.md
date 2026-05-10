@@ -115,7 +115,7 @@ DevImg keeps quality decisions explicit in config, but it warns when common sett
 
 - `quality:` warnings are advisory by default.
 - `devimg check --fail-on-warning` turns warnings into exit code `3`.
-- `devimg doctor --json` exposes quality warnings with code `quality_warning`.
+- `devimg doctor --json` exposes stable warning codes such as `quality:cover-crop`, `quality:low-lossy-quality`, and `quality:output-larger-than-source`.
 - Markdown reports include warnings from `optimize` and `check`.
 - `devimg review` includes manifest-only quality warnings such as upscaled outputs and outputs larger than their source files.
 
@@ -129,6 +129,24 @@ Current diagnostics:
 - Generated output files that are larger than their source file.
 
 Larger generated files are not always wrong. They can happen when the source is already aggressively optimized, when quality is intentionally high, when converting formats, or when graphics/transparency compress better in the source format. Compare visually before lowering quality.
+
+## Warning Acknowledgements
+
+Use warning acknowledgements only after reviewing the image and deciding the warning is intentional. Acknowledgements do not hide hard failures such as missing outputs, stale manifests, modified files, outdated config hashes, or budget violations.
+
+```toml
+[[warnings.acknowledge]]
+code = "quality:cover-crop"
+source = "assets/images/accesstrace.png"
+preset = "project-card"
+reason = "Intentional card crop after visual review."
+```
+
+Acknowledgements are matched by warning `code` plus optional `source`, `output`, `preset`, and `width`. Source-based quality warnings such as `quality:cover-crop`, `quality:low-lossy-quality`, and upscaling diagnostics require both `source` and `preset` so they stay scoped to the reviewed image and transform. Manifest-output warnings such as `quality:output-larger-than-source` require `output`.
+
+Acknowledged warnings are still reported under `Acknowledged Warnings` and in `doctor --json` as `acknowledged_warnings`. `devimg check --fail-on-warning` passes when only acknowledged warnings remain and fails when a new unacknowledged warning appears.
+
+After adding or changing acknowledgements, run `devimg optimize --config devimg.toml` once so the manifest and report carry the current config hash.
 
 ## Framework Diagnostics
 

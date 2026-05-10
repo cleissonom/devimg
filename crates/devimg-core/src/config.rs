@@ -5,6 +5,11 @@ use image::{ImageFormat, ImageOutputFormat};
 use serde::{Deserialize, Deserializer};
 
 use crate::hash::hash_bytes;
+use crate::warnings::{
+    normalize_warning_path, PLAN_NO_VARIANTS, QUALITY_ALLOWED_UPSCALE, QUALITY_COVER_CROP,
+    QUALITY_GENERATED_UPSCALE, QUALITY_LOW_LOSSY, QUALITY_OUTPUT_LARGER_THAN_SOURCE,
+    QUALITY_SKIPPED_UPSCALE,
+};
 use crate::{DevimgError, Result};
 
 #[derive(Debug, Clone)]
@@ -15,6 +20,7 @@ pub struct Config {
     pub sources: Vec<SourceConfig>,
     pub presets: Vec<PresetConfig>,
     pub overrides: Vec<PresetOverrideConfig>,
+    pub warnings: WarningConfig,
     pub budgets: BudgetConfig,
 }
 
@@ -58,6 +64,21 @@ pub struct PresetOverrideConfig {
     pub fit: Option<FitMode>,
     pub crop: Option<CropPosition>,
     pub allow_upscale: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct WarningConfig {
+    pub acknowledgements: Vec<WarningAcknowledgementConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WarningAcknowledgementConfig {
+    pub code: String,
+    pub source: Option<String>,
+    pub output: Option<String>,
+    pub preset: Option<String>,
+    pub width: Option<u32>,
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -369,6 +390,7 @@ struct RawConfig {
     preset: Vec<RawPresetConfig>,
     #[serde(alias = "override")]
     overrides: Vec<RawPresetOverrideConfig>,
+    warnings: RawWarningsConfig,
     budgets: RawBudgetConfig,
 }
 
@@ -453,6 +475,8 @@ impl RawConfig {
             ));
         }
 
+        let warnings = warning_config_from_raw(path, self.warnings)?;
+
         Ok(Config {
             path: normalize_path(path),
             config_hash: hash_bytes(raw.as_bytes()),
@@ -467,6 +491,7 @@ impl RawConfig {
             sources,
             presets,
             overrides,
+            warnings,
             budgets: BudgetConfig {
                 max_total_bytes: self.budgets.max_total_bytes,
                 max_file_bytes: self.budgets.max_file_bytes,
@@ -526,6 +551,28 @@ struct RawPresetOverrideConfig {
     crop: Option<CropPosition>,
     #[serde(alias = "upscale")]
     allow_upscale: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default)]
+struct RawWarningsConfig {
+    #[serde(
+        alias = "acknowledgement",
+        alias = "acknowledgments",
+        alias = "acknowledgements"
+    )]
+    acknowledge: Vec<RawWarningAcknowledgementConfig>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default)]
+struct RawWarningAcknowledgementConfig {
+    code: Option<String>,
+    source: Option<String>,
+    output: Option<String>,
+    preset: Option<String>,
+    width: Option<u32>,
+    reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -591,6 +638,88 @@ fn required<T>(value: Option<T>, path: &Path, field: &str) -> Result<T> {
     value.ok_or_else(|| DevimgError::config(path, format!("missing {field}")))
 }
 
+fn warning_config_from_raw(path: &Path, raw: RawWarningsConfig) -> Result<WarningConfig> {
+    let mut acknowledgements = Vec::new();
+    for acknowledgement in raw.acknowledge {
+        let code = required_trimmed(acknowledgement.code, path, "warnings.acknowledge.code")?;
+        let source = optional_trimmed_path(acknowledgement.source);
+        let output = optional_trimmed_path(acknowledgement.output);
+        let preset = optional_trimmed(acknowledgement.preset);
+        let reason = optional_trimmed(acknowledgement.reason);
+        let has_scope = source.is_some()
+            || output.is_some()
+            || preset.is_some()
+            || acknowledgement.width.is_some();
+        if !has_scope {
+            return Err(DevimgError::config(
+                path,
+                "warnings.acknowledge requires at least one of source, output, preset, or width",
+            ));
+        }
+        if warning_acknowledgement_requires_source_and_preset(&code)
+            && (source.is_none() || preset.is_none())
+        {
+            return Err(DevimgError::config(
+                path,
+                format!("{code} acknowledgements require source and preset"),
+            ));
+        }
+        if warning_acknowledgement_requires_output(&code) && output.is_none() {
+            return Err(DevimgError::config(
+                path,
+                format!("{code} acknowledgements require output"),
+            ));
+        }
+        if warning_acknowledgement_requires_source(&code) && source.is_none() {
+            return Err(DevimgError::config(
+                path,
+                format!("{code} acknowledgements require source"),
+            ));
+        }
+        acknowledgements.push(WarningAcknowledgementConfig {
+            code,
+            source,
+            output,
+            preset,
+            width: acknowledgement.width,
+            reason,
+        });
+    }
+    Ok(WarningConfig { acknowledgements })
+}
+
+fn required_trimmed(value: Option<String>, path: &Path, field: &str) -> Result<String> {
+    optional_trimmed(value).ok_or_else(|| DevimgError::config(path, format!("missing {field}")))
+}
+
+fn optional_trimmed(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn optional_trimmed_path(value: Option<String>) -> Option<String> {
+    optional_trimmed(value).map(|value| normalize_warning_path(&value))
+}
+
+fn warning_acknowledgement_requires_source_and_preset(code: &str) -> bool {
+    matches!(
+        code,
+        QUALITY_LOW_LOSSY | QUALITY_SKIPPED_UPSCALE | QUALITY_ALLOWED_UPSCALE | QUALITY_COVER_CROP
+    )
+}
+
+fn warning_acknowledgement_requires_source(code: &str) -> bool {
+    matches!(code, PLAN_NO_VARIANTS)
+}
+
+fn warning_acknowledgement_requires_output(code: &str) -> bool {
+    matches!(
+        code,
+        QUALITY_GENERATED_UPSCALE | QUALITY_OUTPUT_LARGER_THAN_SOURCE
+    )
+}
+
 fn reject_unknown_top_level(path: &Path, value: &toml::Value) -> Result<()> {
     let Some(table) = value.as_table() else {
         return Err(DevimgError::config(
@@ -608,6 +737,7 @@ fn reject_unknown_top_level(path: &Path, value: &toml::Value) -> Result<()> {
                 | "presets"
                 | "overrides"
                 | "override"
+                | "warnings"
                 | "budgets"
         ) {
             return Err(DevimgError::config(
@@ -839,6 +969,69 @@ upscale = true
             Some(CropPosition { x: 0.5, y: 0.0 })
         );
         assert_eq!(config.overrides[0].allow_upscale, Some(true));
+    }
+
+    #[test]
+    fn parses_scoped_warning_acknowledgements() {
+        let raw = r#"
+[project]
+manifest = "public/images/devimg-manifest.json"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+
+[[preset]]
+name = "project-card"
+widths = [640]
+formats = ["webp"]
+
+[[warnings.acknowledge]]
+code = "quality:cover-crop"
+source = "./assets/images/accesstrace.png"
+preset = "project-card"
+reason = "Intentional social-card framing."
+"#;
+        let config = parse_config(Path::new("devimg.toml"), raw).expect("config parses");
+
+        assert_eq!(config.warnings.acknowledgements.len(), 1);
+        let acknowledgement = &config.warnings.acknowledgements[0];
+        assert_eq!(acknowledgement.code, "quality:cover-crop");
+        assert_eq!(
+            acknowledgement.source.as_deref(),
+            Some("assets/images/accesstrace.png")
+        );
+        assert_eq!(acknowledgement.preset.as_deref(), Some("project-card"));
+        assert_eq!(
+            acknowledgement.reason.as_deref(),
+            Some("Intentional social-card framing.")
+        );
+    }
+
+    #[test]
+    fn rejects_broad_cover_crop_warning_acknowledgements() {
+        let raw = r#"
+[project]
+manifest = "public/images/devimg-manifest.json"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+
+[[preset]]
+name = "project-card"
+widths = [640]
+formats = ["webp"]
+
+[[warnings.acknowledge]]
+code = "quality:cover-crop"
+preset = "project-card"
+"#;
+        let error = parse_config(Path::new("devimg.toml"), raw).expect_err("config fails");
+
+        assert!(error.to_string().contains("source and preset"));
     }
 
     #[test]

@@ -12,6 +12,7 @@ use crate::quality::{
     skipped_upscale_warning,
 };
 use crate::scan::compile_globs;
+use crate::warnings::{warning_message, PLAN_METADATA_NOT_PRESERVED, PLAN_NO_VARIANTS};
 use crate::{DevimgError, Result};
 
 pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
@@ -19,10 +20,10 @@ pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
     let mut warnings = Vec::new();
     let overrides = compile_overrides(config)?;
     if !config.project.strip_metadata {
-        warnings.push(
-            "strip_metadata=false was requested, but MVP encoders re-encode images and do not preserve source metadata"
-                .to_string(),
-        );
+        warnings.push(warning_message(
+            PLAN_METADATA_NOT_PRESERVED,
+            "strip_metadata=false was requested, but MVP encoders re-encode images and do not preserve source metadata",
+        ));
     }
 
     for source in sources {
@@ -106,9 +107,12 @@ pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
             }
         }
         if planned_for_source == 0 {
-            warnings.push(format!(
-                "no variants planned for {} after applying presets",
-                source.project_path
+            warnings.push(warning_message(
+                PLAN_NO_VARIANTS,
+                format!(
+                    "no variants planned for {} after applying presets",
+                    source.project_path
+                ),
             ));
         }
     }

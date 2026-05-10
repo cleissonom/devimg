@@ -37,6 +37,12 @@ pub fn render_run_report(result: &OptimizeResult) -> String {
             out.push_str(&format!("- {warning}\n"));
         }
     }
+    if !result.acknowledged_warnings.is_empty() {
+        out.push_str("\n## Acknowledged Warnings\n\n");
+        for warning in &result.acknowledged_warnings {
+            out.push_str(&format!("- {warning}\n"));
+        }
+    }
     if !result.issues.is_empty() {
         out.push_str("\n## Check Issues\n\n");
         for issue in &result.issues {
@@ -141,7 +147,7 @@ pub fn render_doctor_report(report: &DoctorReport) -> String {
     let mut out = String::new();
     out.push_str("DevImg Doctor\n\n");
     if report.passed() {
-        if report.warnings.is_empty() {
+        if report.warnings.is_empty() && report.acknowledged_warnings.is_empty() {
             out.push_str("Status: pass\n\n");
         } else {
             out.push_str("Status: pass with warnings\n\n");
@@ -196,6 +202,16 @@ pub fn render_doctor_report(report: &DoctorReport) -> String {
     if !report.warnings.is_empty() {
         out.push_str("\nWarnings\n");
         for warning in &report.warnings {
+            out.push_str(&format!(
+                "- `{}` at `{}`: {}\n  Hint: {}\n",
+                warning.code, warning.path, warning.message, warning.hint
+            ));
+        }
+    }
+
+    if !report.acknowledged_warnings.is_empty() {
+        out.push_str("\nAcknowledged Warnings\n");
+        for warning in &report.acknowledged_warnings {
             out.push_str(&format!(
                 "- `{}` at `{}`: {}\n  Hint: {}\n",
                 warning.code, warning.path, warning.message, warning.hint
