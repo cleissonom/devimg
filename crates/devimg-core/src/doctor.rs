@@ -42,6 +42,7 @@ pub struct DoctorReport {
     pub manifest_path: String,
     pub report_path: String,
     pub frameworks: Vec<String>,
+    pub manifest_helpers: Vec<String>,
     pub source_image_count: usize,
     pub planned_variant_count: usize,
     pub generated_variant_count: usize,
@@ -97,7 +98,10 @@ pub fn doctor(config: &Config, options: DoctorOptions) -> Result<DoctorReport> {
     let mut warnings = Vec::new();
     let mut acknowledged_warnings = Vec::new();
     let mut issues = Vec::new();
-    let manifest_export_configured = options.manifest_export.is_some();
+    let manifest_export_output = options
+        .manifest_export
+        .as_ref()
+        .map(|export| export.output.as_path());
 
     checks.push(pass_check(
         "config",
@@ -105,13 +109,17 @@ pub fn doctor(config: &Config, options: DoctorOptions) -> Result<DoctorReport> {
     ));
 
     inspect_source_dirs(config, &mut checks, &mut warnings, &mut issues)?;
-    let framework_inspection = inspect_frameworks(config, manifest_export_configured);
+    let framework_inspection = inspect_frameworks(config, manifest_export_output);
     if framework_inspection.frameworks.is_empty() {
         checks.push(pass_check("framework", "no supported framework detected"));
     } else {
         checks.push(pass_check(
             "framework",
             format!("detected {}", framework_inspection.frameworks.join(", ")),
+        ));
+        checks.push(pass_check(
+            "framework_consumption",
+            "use generated variants through img/picture, framework Image with unoptimized when DevImg owns sizing and quality, or intentionally layer framework optimization on DevImg-generated source variants",
         ));
     }
     for warning in framework_inspection.warnings {
@@ -256,6 +264,7 @@ pub fn doctor(config: &Config, options: DoctorOptions) -> Result<DoctorReport> {
         manifest_path: manifest_project_path,
         report_path: report_project_path,
         frameworks: framework_inspection.frameworks,
+        manifest_helpers: framework_inspection.manifest_helpers,
         source_image_count,
         planned_variant_count,
         generated_variant_count,

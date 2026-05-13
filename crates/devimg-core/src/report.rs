@@ -183,6 +183,12 @@ pub fn render_doctor_report(report: &DoctorReport) -> String {
         report.frameworks.join(", ")
     };
     out.push_str(&format!("- Frameworks: `{frameworks}`\n"));
+    let manifest_helpers = if report.manifest_helpers.is_empty() {
+        "none".to_string()
+    } else {
+        report.manifest_helpers.join(", ")
+    };
+    out.push_str(&format!("- Manifest helpers: `{manifest_helpers}`\n"));
     out.push_str(&format!(
         "- Source images: `{}`\n",
         report.source_image_count

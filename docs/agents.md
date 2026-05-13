@@ -4,6 +4,8 @@ Run `devimg doctor --config devimg.toml` before changing source images, `devimg.
 
 The full agent contract lives in `docs/agent-contract.md`. Use it as the file ownership and safety policy when a project has DevImg-managed assets.
 
+Roadmap planning for future AI-assisted features lives in `docs/roadmap-v0.2-ai.md`. Until those features exist, AI agents should rely on deterministic DevImg commands and treat any generated prose as reviewable suggestions, not source-of-truth pipeline behavior.
+
 Recommended loop:
 
 ```bash

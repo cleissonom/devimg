@@ -8,6 +8,14 @@ This example is a compact frontend-project fixture for DevImg's own dogfooding. 
 
 The config enables `content_hash_filenames = true` and includes both `cover` and `contain` presets. Generated variants, the manifest, the report, TypeScript helper export, and review artifact are reproducible and should not be edited by hand.
 
+This is the main example for public demos:
+
+- Content-hash filenames show how generated URLs can be used with immutable caching.
+- `cover` presets show card/social cropping.
+- `contain` presets show logo or diagram resizing without cropping.
+- The TypeScript helper export shows how apps can avoid hard-coded generated filenames.
+- The static review artifact shows how generated variants can be reviewed locally or uploaded from CI with `actions/upload-artifact`.
+
 Run the local loop:
 
 ```bash
@@ -25,5 +33,7 @@ cargo run -p devimg-cli -- review \
   --manifest examples/dogfood/public/images/devimg-manifest.json \
   --output examples/dogfood/.devimg/review.html
 ```
+
+The review artifact is derived output. Use the command above before taking screenshots for docs, release notes, or demos. If a screenshot is committed later, refresh it from the regenerated review artifact rather than editing it by hand.
 
 Use this example when changing DevImg behavior that affects hashed output filenames, source-specific paths, contain resizing, crop anchors, helper exports, review artifacts, or Action smoke coverage.

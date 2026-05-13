@@ -4,12 +4,13 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::config::Config;
+use crate::config::{project_relative, resolve_project_path, Config};
 use crate::pipeline::path_to_string;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FrameworkInspection {
     pub frameworks: Vec<String>,
+    pub manifest_helpers: Vec<String>,
     pub warnings: Vec<FrameworkWarning>,
 }
 
@@ -23,12 +24,17 @@ pub(crate) struct FrameworkWarning {
 
 pub(crate) fn inspect_frameworks(
     config: &Config,
-    manifest_export_configured: bool,
+    manifest_export_output: Option<&Path>,
 ) -> FrameworkInspection {
     let detected = detect_frameworks(&config.project.root);
     let frameworks = detected.keys().cloned().collect::<Vec<_>>();
+    let manifest_helpers = detect_manifest_helpers(config);
     let mut warnings = Vec::new();
     let public_output = has_public_output(config);
+    let checked_helper = manifest_export_output.is_some();
+    let helper_checked = manifest_export_output
+        .and_then(|output| matching_helper(config, &manifest_helpers, output))
+        .is_some();
 
     if frameworks.len() > 1 {
         warnings.push(warning(
@@ -60,20 +66,45 @@ pub(crate) fn inspect_frameworks(
         ));
     }
 
-    if !frameworks.is_empty()
+    if !frameworks.is_empty() && config.project.content_hash_filenames && !checked_helper {
+        if manifest_helpers.is_empty() {
+            warnings.push(warning(
+                "framework_manifest_export_missing",
+                &config.path,
+                "content-hash filenames are enabled in a framework project, but no checked manifest helper was configured or discovered",
+                "If the app consumes generated paths from a helper, generate one with devimg manifest export and pass --export-output to doctor in CI.",
+            ));
+        } else {
+            warnings.push(warning(
+                "framework_manifest_helper_unchecked",
+                &config.path,
+                format!(
+                    "content-hash filenames are enabled and helper file(s) were discovered, but doctor was not given --export-output to verify them: {}",
+                    manifest_helpers.join(", ")
+                ),
+                "Pass --export-output with the generated helper path and the same options used by devimg manifest export.",
+            ));
+        }
+    } else if !frameworks.is_empty()
         && config.project.content_hash_filenames
-        && !manifest_export_configured
+        && checked_helper
+        && !manifest_helpers.is_empty()
+        && !helper_checked
     {
         warnings.push(warning(
-            "framework_manifest_export_missing",
+            "framework_manifest_helper_unchecked",
             &config.path,
-            "content-hash filenames are enabled in a framework project, but doctor was not given --export-output to verify a checked-in manifest helper",
-            "If the app consumes generated paths from a helper, pass --export-output with the same options used by devimg manifest export.",
+            format!(
+                "helper file(s) were discovered but the configured --export-output does not match them: {}",
+                manifest_helpers.join(", ")
+            ),
+            "Verify every checked-in helper that contains generated DevImg URLs, or remove stale helper files.",
         ));
     }
 
     FrameworkInspection {
         frameworks,
+        manifest_helpers,
         warnings,
     }
 }
@@ -160,6 +191,32 @@ fn add_dependency(
         .insert(format!("package:{package}"));
 }
 
+fn detect_manifest_helpers(config: &Config) -> Vec<String> {
+    let mut helpers = Vec::new();
+    for candidate in [
+        "lib/devimg.generated.ts",
+        "lib/devimg.ts",
+        "src/lib/devimg.generated.ts",
+        "src/lib/devimg.ts",
+    ] {
+        let path = config.project.root.join(candidate);
+        if path.is_file() {
+            helpers.push(path_to_string(&project_relative(config, &path)));
+        }
+    }
+    helpers
+}
+
+fn matching_helper<'a>(
+    config: &Config,
+    helpers: &'a [String],
+    export_output: &Path,
+) -> Option<&'a String> {
+    let resolved = resolve_project_path(config, export_output);
+    let relative = path_to_string(&project_relative(config, &resolved));
+    helpers.iter().find(|helper| **helper == relative)
+}
+
 fn has_public_output(config: &Config) -> bool {
     config.sources.iter().any(|source| {
         first_component(&source.output).is_some_and(|component| component == "public")
@@ -190,7 +247,7 @@ fn warning(
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use crate::config::parse_config;
 
@@ -208,7 +265,7 @@ mod tests {
             .expect("astro config writes");
         let config = config(&root, "content_hash_filenames = false");
 
-        let report = inspect_frameworks(&config, false);
+        let report = inspect_frameworks(&config, None);
 
         assert_eq!(report.frameworks, vec!["astro", "next", "vite"]);
         assert!(report
@@ -224,8 +281,8 @@ mod tests {
         fs::write(root.join("vite.config.ts"), "export default {}\n").expect("vite config writes");
         let config = config(&root, "content_hash_filenames = true");
 
-        let without_export = inspect_frameworks(&config, false);
-        let with_export = inspect_frameworks(&config, true);
+        let without_export = inspect_frameworks(&config, None);
+        let with_export = inspect_frameworks(&config, Some(Path::new("lib/other.ts")));
 
         assert!(without_export
             .warnings
@@ -239,12 +296,84 @@ mod tests {
     }
 
     #[test]
+    fn discovers_common_manifest_helpers() {
+        let root = temp_project("framework_helpers");
+        fs::create_dir_all(root.join("lib")).expect("lib creates");
+        fs::create_dir_all(root.join("src/lib")).expect("src lib creates");
+        fs::write(root.join("vite.config.ts"), "export default {}\n").expect("vite config writes");
+        fs::write(root.join("lib/devimg.generated.ts"), "generated\n")
+            .expect("generated helper writes");
+        fs::write(root.join("lib/devimg.ts"), "runtime\n").expect("runtime helper writes");
+        fs::write(root.join("src/lib/devimg.ts"), "src runtime\n").expect("src helper writes");
+        let config = config(&root, "content_hash_filenames = true");
+
+        let report = inspect_frameworks(&config, None);
+
+        assert_eq!(
+            report.manifest_helpers,
+            vec![
+                "lib/devimg.generated.ts",
+                "lib/devimg.ts",
+                "src/lib/devimg.ts"
+            ]
+        );
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "framework_manifest_helper_unchecked"));
+        assert!(!report
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "framework_manifest_export_missing"));
+        cleanup(&root);
+    }
+
+    #[test]
+    fn absolute_export_output_matches_discovered_helper() {
+        let root = temp_project("framework_helper_match");
+        fs::create_dir_all(root.join("lib")).expect("lib creates");
+        fs::write(root.join("vite.config.ts"), "export default {}\n").expect("vite config writes");
+        fs::write(root.join("lib/devimg.generated.ts"), "generated\n")
+            .expect("generated helper writes");
+        let config = config(&root, "content_hash_filenames = true");
+        let export_output = root.join("lib/devimg.generated.ts");
+
+        let report = inspect_frameworks(&config, Some(&export_output));
+
+        assert_eq!(report.manifest_helpers, vec!["lib/devimg.generated.ts"]);
+        assert!(!report.warnings.iter().any(|warning| {
+            warning.code == "framework_manifest_helper_unchecked"
+                || warning.code == "framework_manifest_export_missing"
+        }));
+        cleanup(&root);
+    }
+
+    #[test]
+    fn warns_when_configured_export_does_not_match_discovered_helper() {
+        let root = temp_project("framework_helper_mismatch");
+        fs::create_dir_all(root.join("lib")).expect("lib creates");
+        fs::write(root.join("vite.config.ts"), "export default {}\n").expect("vite config writes");
+        fs::write(root.join("lib/devimg.generated.ts"), "generated\n")
+            .expect("generated helper writes");
+        let config = config(&root, "content_hash_filenames = true");
+        let other_output = PathBuf::from("lib/other.ts");
+
+        let report = inspect_frameworks(&config, Some(&other_output));
+
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "framework_manifest_helper_unchecked"));
+        cleanup(&root);
+    }
+
+    #[test]
     fn next_public_output_warning_explains_static_assets_and_cdn_behavior() {
         let root = temp_project("framework_next_copy");
         fs::write(root.join("next.config.mjs"), "export default {}\n").expect("next config writes");
         let config = config(&root, "content_hash_filenames = true");
 
-        let report = inspect_frameworks(&config, true);
+        let report = inspect_frameworks(&config, Some(Path::new("lib/devimg.generated.ts")));
         let warning = report
             .warnings
             .iter()
@@ -262,9 +391,10 @@ mod tests {
         let root = temp_project("framework_none");
         let config = config(&root, "content_hash_filenames = false");
 
-        let report = inspect_frameworks(&config, false);
+        let report = inspect_frameworks(&config, None);
 
         assert!(report.frameworks.is_empty());
+        assert!(report.manifest_helpers.is_empty());
         assert!(report.warnings.is_empty());
         cleanup(&root);
     }

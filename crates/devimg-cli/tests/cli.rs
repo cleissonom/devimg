@@ -12,7 +12,7 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["review", "--help"]), 0);
     let version = run(["--version"]);
     assert_status(&version, 0);
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.12"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.13"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -351,6 +351,127 @@ fn doctor_reports_framework_diagnostics() {
         serde_json::from_slice(&vite_output.stdout).expect("vite doctor JSON parses");
     assert_json_array_contains(&vite_document["frameworks"], "vite");
     cleanup(&vite);
+}
+
+#[test]
+fn doctor_reports_framework_consumption_helpers() {
+    let project = fixture_project_with_project_settings(
+        "doctor_framework_helpers",
+        "sample.png",
+        "content_hash_filenames = true",
+        r#"max_total_bytes = "5mb""#,
+    );
+    write_package_json(&project, r#"{"dependencies":{"next":"15.0.0"}}"#);
+    fs::write(project.join("next.config.mjs"), "export default {}\n").expect("next config writes");
+    fs::create_dir_all(project.join("lib")).expect("lib creates");
+    fs::write(
+        project.join("lib/devimg.generated.ts"),
+        "stale generated helper\n",
+    )
+    .expect("helper writes");
+    let config = path_arg(project.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    let json_output = run(["doctor", "--config", config.as_str(), "--json"]);
+    assert_status(&json_output, 0);
+    let document: serde_json::Value =
+        serde_json::from_slice(&json_output.stdout).expect("doctor JSON parses");
+    assert_json_array_contains(&document["frameworks"], "next");
+    assert_json_array_contains(&document["manifest_helpers"], "lib/devimg.generated.ts");
+    assert_diagnostic_code(&document["warnings"], "framework_manifest_helper_unchecked");
+    assert!(!document["warnings"]
+        .as_array()
+        .expect("warnings array")
+        .iter()
+        .any(|warning| warning["code"] == "framework_manifest_export_missing"));
+    assert!(document["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| {
+            check["name"] == "framework_consumption"
+                && check["message"]
+                    .as_str()
+                    .expect("check message")
+                    .contains("img/picture")
+                && check["message"]
+                    .as_str()
+                    .expect("check message")
+                    .contains("unoptimized")
+                && check["message"]
+                    .as_str()
+                    .expect("check message")
+                    .contains("intentionally layer")
+        }));
+
+    let human_output = run(["doctor", "--config", config.as_str()]);
+    assert_status(&human_output, 0);
+    let stdout = String::from_utf8_lossy(&human_output.stdout);
+    assert!(stdout.contains("Manifest helpers: `lib/devimg.generated.ts`"));
+    assert!(stdout.contains("img/picture"));
+    assert!(stdout.contains("unoptimized"));
+    assert!(stdout.contains("intentionally layer"));
+    cleanup(&project);
+}
+
+#[test]
+fn doctor_export_output_suppresses_framework_helper_warning() {
+    let project = fixture_project_with_project_settings(
+        "doctor_framework_export_verified",
+        "sample.png",
+        "content_hash_filenames = true",
+        r#"max_total_bytes = "5mb""#,
+    );
+    write_package_json(&project, r#"{"devDependencies":{"vite":"7.0.0"}}"#);
+    fs::create_dir_all(project.join("lib")).expect("lib creates");
+    let config = path_arg(project.join("devimg.toml"));
+    let manifest = path_arg(project.join("public/images/devimg-manifest.json"));
+    let generated = path_arg(project.join("lib/devimg.generated.ts"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    assert_code(
+        run([
+            "manifest",
+            "export",
+            "--manifest",
+            manifest.as_str(),
+            "--format",
+            "typescript",
+            "--strip-prefix",
+            "public",
+            "--url-prefix",
+            "/",
+            "--typescript-helpers",
+            "--output",
+            generated.as_str(),
+        ]),
+        0,
+    );
+    let output = run([
+        "doctor",
+        "--config",
+        config.as_str(),
+        "--json",
+        "--export-output",
+        generated.as_str(),
+        "--export-format",
+        "typescript",
+        "--strip-prefix",
+        "public",
+        "--url-prefix",
+        "/",
+        "--typescript-helpers",
+    ]);
+    assert_status(&output, 0);
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("doctor JSON parses");
+    assert_json_array_contains(&document["manifest_helpers"], "lib/devimg.generated.ts");
+    assert!(!document["warnings"]
+        .as_array()
+        .expect("warnings array")
+        .iter()
+        .any(|warning| warning["code"] == "framework_manifest_helper_unchecked"));
+    cleanup(&project);
 }
 
 #[test]

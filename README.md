@@ -4,6 +4,17 @@
 
 The MVP has no web UI and no remote storage. The CLI is the source of truth; the GitHub Action wraps `devimg check` or `devimg optimize`, can verify checked-in manifest exports, and can create an optional static review artifact for CI upload.
 
+## Where DevImg Fits
+
+DevImg sits above image engines, framework image components, and hosted transformation services. Use it when a repository needs generated images to be reproducible, reviewable, and enforced in CI.
+
+- Image engines such as `sharp` are excellent low-level processors; DevImg owns project config, manifests, reports, and stale/budget checks.
+- Framework image components such as Next.js `Image` and Astro assets are useful runtime/build integrations; DevImg keeps generated variants and app helper exports explicit in the repo.
+- Hosted image services are powerful for on-the-fly transformations; DevImg stays local-first and CI-first with no required remote storage.
+- Compression tools are useful for one-off optimization; DevImg manages the repeatable source-to-variant workflow.
+
+Current roadmap notes live in `docs/roadmap-v0.1.13.md` and `docs/roadmap-v0.2-ai.md`. Public sharing notes for the next release live in `docs/share-v0.1.13.md`.
+
 ## Quickstart
 
 ```bash
@@ -39,6 +50,7 @@ devimg optimize --config devimg.toml --allow-overwrite
 devimg manifest export --manifest public/images/devimg-manifest.json --strip-prefix public --url-prefix / --format typescript --output lib/devimg.generated.ts
 devimg check --config devimg.toml
 devimg doctor --config devimg.toml --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
+devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html --force
 ```
 
 Repeated `optimize` runs are incremental. When the current manifest and output file prove a variant is already fresh, DevImg skips the expensive decode/resize/encode work and reports the skipped count. Operation hashes track transform inputs rather than every config byte, so config-only metadata changes such as warning acknowledgements can refresh the manifest/report without re-encoding unchanged images. If transform settings, source bytes, output bytes, or dimensions are stale, DevImg falls back to normal generation and keeps the existing safe-overwrite rules.
@@ -50,7 +62,20 @@ See `examples/README.md` for maintained fixtures:
 - `examples/portfolio`: small portfolio/blog/docs workflow with stable filenames.
 - `examples/dogfood`: broader frontend workflow with content-hash filenames, social/card/logo/screenshot-like paths, `cover` and `contain` presets, helper export, and visual review coverage.
 
-Generated example outputs are ignored and reproducible. Regenerate them with `devimg`; do not hand-edit generated variants, manifests, reports, helper exports, or review artifacts.
+Generated example outputs are ignored and reproducible. Regenerate them with `devimg`; do not hand-edit generated variants, manifests, reports, helper exports, or review artifacts. The dogfood example is the best local fixture for public-story screenshots and review-artifact demos because it exercises content-hash filenames, helper exports, and the static HTML review flow.
+
+## What Changes In A PR?
+
+A normal image update should make the source change easy to review and keep generated outputs consistent:
+
+- Source image or `devimg.toml` changes describe the intent.
+- Generated variants update under the configured output directory.
+- `devimg-manifest.json` records the exact source-to-output mapping, dimensions, bytes, hashes, preset, fit, crop, and format.
+- Optional app helper exports such as `lib/devimg.generated.ts` keep framework code away from hard-coded content-hash filenames.
+- `devimg-report.md` summarizes counts, byte totals, warnings, and budget status.
+- Optional `.devimg/review.html` artifacts let maintainers inspect generated variants locally or from CI artifact upload.
+
+Treat generated variants, manifests, reports, helper exports, and review artifacts as derived files. Refresh them with DevImg commands and review them together with the source/config change.
 
 ## Config
 
@@ -239,7 +264,7 @@ Acknowledged warnings move to an `Acknowledged Warnings` section in reports and 
 - Astro
 - Vite
 
-Framework diagnostics are advisory warnings. They do not change image generation and do not fail `doctor` by themselves. Current hints cover mixed framework detection, public generated outputs without content-hash filenames, and content-hash filenames without a checked-in manifest export passed through `--export-output`. For Next.js projects, DevImg explains that generated files under `public/` are static assets that Vercel/CDNs can cache directly, while `next/image` may optimize them again unless the app intentionally uses `img`/`picture` or `Image` with `unoptimized`.
+Framework diagnostics are advisory warnings. They do not change image generation and do not fail `doctor` by themselves. Current hints cover mixed framework detection, public generated outputs without content-hash filenames, common helper files such as `lib/devimg.generated.ts`, and content-hash filenames without a checked manifest export passed through `--export-output`. For Next.js projects, DevImg explains that generated files under `public/` are static assets that Vercel/CDNs can cache directly, while `next/image` may optimize them again unless the app intentionally uses `img`/`picture`, uses `Image` with `unoptimized`, or deliberately layers framework optimization on top of DevImg-generated source variants.
 
 For `fit = "cover"`, `crop` controls which part of the resized image is preserved when the aspect ratio requires cropping. It defaults to `center`. Use anchors such as `top`, `bottom`, `left`, `right`, `top-left`, or a normalized focal point:
 
@@ -301,7 +326,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.12
+      - uses: cleissonom/devimg/action@v0.1.13
         with:
           config: devimg.toml
           mode: check
@@ -317,7 +342,7 @@ jobs:
           if-no-files-found: error
 ```
 
-This repository's CI smoke test builds the CLI, runs the local composite Action with `uses: ./action`, and passes `binary-path: target/debug/devimg`. Consumer workflows should use the published Action path shown above.
+This repository's CI smoke test builds the CLI, runs the local composite Action with `uses: ./action`, and passes `binary-path: target/debug/devimg`. Repositories that can access this repository's Action and release assets can pin the release tag shown above.
 
 When `export-output` is set, the Action runs `devimg manifest export --check` after `devimg check --no-report` and fails if the checked-in helper file is missing or stale. It does not rewrite the helper. Set `export-typescript-helpers: "true"` when the checked-in TypeScript file was generated with `--typescript-helpers`.
 
@@ -338,8 +363,8 @@ cargo test --all
 Create a version tag that matches the workspace version and push it:
 
 ```bash
-git tag v0.1.12
-git push origin v0.1.12
+git tag v0.1.13
+git push origin v0.1.13
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

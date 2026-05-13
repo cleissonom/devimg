@@ -157,9 +157,10 @@ Framework warnings are advisory:
 - `framework_multiple_detected`: more than one supported framework was detected.
 - `framework_next_image_double_optimization`: Next.js was detected with generated files under `public/`; verify `next/image` or hosting image optimization is not reprocessing generated variants unexpectedly.
 - `framework_cache_without_hash`: a framework project outputs generated assets under `public/` while `content_hash_filenames = false`.
-- `framework_manifest_export_missing`: content-hash filenames are enabled in a framework project, but `doctor` was not given `--export-output` to verify the checked-in helper file.
+- `framework_manifest_export_missing`: content-hash filenames are enabled in a framework project, but no checked manifest helper was configured or discovered.
+- `framework_manifest_helper_unchecked`: a common helper file such as `lib/devimg.generated.ts` or `lib/devimg.ts` was discovered, but `doctor` was not given a matching `--export-output` drift check.
 
-These warnings do not add framework runtime coupling. They are hints to review config, app image consumption, cache headers, and manifest export checks.
+`doctor --json` also includes `manifest_helpers` when common helper files are discovered. These warnings do not add framework runtime coupling. They are hints to review config, app image consumption, cache headers, and manifest export checks. For framework projects, `doctor` explains the intended consumption modes: plain `img`/`picture` URLs from exports, framework `Image` with `unoptimized` when DevImg owns sizing and quality, or intentional framework optimization layered on generated source variants.
 
 ## Budgets
 

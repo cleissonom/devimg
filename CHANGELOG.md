@@ -6,6 +6,12 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 No unreleased changes.
 
+## 0.1.13
+
+- Improved `devimg doctor` framework-consumption diagnostics with common helper discovery, `manifest_helpers` JSON output, and clearer frontend consumption-mode guidance.
+- Added the `framework_manifest_helper_unchecked` advisory warning when content-hash filenames are used with discovered helper files that are not verified by `--export-output`.
+- Polished README/example guidance and added a `v0.1.13` share package draft.
+
 ## 0.1.12
 
 - Changed operation hashing to be transform-focused, so warning acknowledgements and other non-transform config metadata do not make every planned output look changed.
