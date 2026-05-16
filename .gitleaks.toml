@@ -1,0 +1,4 @@
+title = "devimg gitleaks configuration"
+
+[extend]
+useDefault = true

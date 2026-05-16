@@ -12,6 +12,7 @@ Run the same checks locally before publishing:
 cargo +1.85.1 fmt --all -- --check
 cargo +1.85.1 clippy --all-targets --all-features -- -D warnings
 cargo +1.85.1 test --all
+scripts/security-checks.sh
 cargo +1.85.1 publish --dry-run -p devimg-core
 cargo +1.85.1 package -p devimg --no-verify --list
 ```

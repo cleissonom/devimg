@@ -11,7 +11,7 @@ on:
         required: true
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,6 +21,8 @@ jobs:
   build:
     name: Build ${{ matrix.asset_os }}-${{ matrix.asset_arch }}
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -42,21 +44,23 @@ jobs:
             asset_os: windows
             asset_arch: x86_64
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add "${{ matrix.target }}" --toolchain stable
 
       - name: Verify release tag matches crate version
         shell: bash
         run: |
           set -euo pipefail
-          version="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; data=json.load(sys.stdin); print(next(p["version"] for p in data["packages"] if p["name"] == "devimg"))')"
+          version="$(cargo +stable metadata --no-deps --format-version 1 | python3 -c 'import json, sys; data=json.load(sys.stdin); print(next(p["version"] for p in data["packages"] if p["name"] == "devimg"))')"
           expected="v$version"
           if [[ "$RELEASE_TAG" != "$expected" ]]; then
             echo "release tag $RELEASE_TAG does not match crate version $expected" >&2
@@ -64,14 +68,14 @@ jobs:
           fi
 
       - name: Build release binary
-        run: cargo build --locked --release -p devimg --target ${{ matrix.target }}
+        run: cargo +stable build --locked --release -p devimg --target ${{ matrix.target }}
 
       - name: Package release archive
         shell: bash
         run: scripts/package-release.sh "${{ matrix.target }}" "${{ matrix.asset_os }}" "${{ matrix.asset_arch }}"
 
       - name: Upload archive artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: devimg-${{ matrix.asset_os }}-${{ matrix.asset_arch }}
           path: |
@@ -83,14 +87,17 @@ jobs:
     name: Publish GitHub release
     runs-on: ubuntu-latest
     needs: build
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: dist
           merge-multiple: true

@@ -37,7 +37,13 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all
 ```
 
-Run `cargo audit` and `gitleaks detect --redact --no-banner` when dependencies, release logic, Action logic, or repository metadata changes.
+Run the local security stack when dependencies, release logic, Action logic, or repository metadata changes:
+
+```bash
+scripts/security-checks.sh
+```
+
+The script expects `gitleaks`, `cargo-audit`, `cargo-deny`, and `zizmor` on `PATH` and prints install hints when a tool is missing.
 
 ## Pull Requests
 

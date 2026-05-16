@@ -6,7 +6,9 @@ This checklist is for the first intentionally public DevImg release.
 
 - Confirm the working tree contains no ignored planning files or local artifacts.
 - Run the full local verification set in `docs/release.md`.
-- Run `gitleaks detect --redact --no-banner`.
+- Run `scripts/security-checks.sh`.
+- Confirm the GitHub Actions `Gitleaks`, `Rust Security`, and `Workflow Security` jobs pass on the public-distribution branch.
+- After the repository is public, confirm the public-only `CodeQL` and `Scorecard` workflows pass.
 - Review public docs for private-only wording, personal paths, or private tokens.
 - Confirm GitHub repository description and topics are set.
 

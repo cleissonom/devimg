@@ -366,6 +366,12 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all
 ```
 
+Run local security checks before release or security-sensitive changes:
+
+```bash
+scripts/security-checks.sh
+```
+
 ## Release
 
 Create a version tag that matches the workspace version and push it:

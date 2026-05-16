@@ -8,35 +8,108 @@ permissions:
   contents: read
 
 jobs:
+  gitleaks:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Gitleaks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITLEAKS_VERSION: 8.30.0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          gh release download "v${GITLEAKS_VERSION}" \
+            --repo gitleaks/gitleaks \
+            --pattern "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            --pattern "gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
+            --dir "$tmp"
+          (
+            cd "$tmp"
+            grep "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -
+            tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
+          )
+          mkdir -p "$RUNNER_TEMP/gitleaks-bin"
+          install -m 0755 "$tmp/gitleaks" "$RUNNER_TEMP/gitleaks-bin/gitleaks"
+          echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
+
+      - name: Scan secrets
+        run: gitleaks detect --redact --config .gitleaks.toml --source . --platform github
+
   actionlint:
     name: Actionlint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: raven-actions/actionlint@v2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - uses: raven-actions/actionlint@205b530c5d9fa8f44ae9ed59f341a0db994aa6f8 # v2
+
+  workflow-security:
+    name: Workflow Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Install zizmor
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          cargo +1.88.0 install zizmor --locked --version 1.25.2
+
+      - name: Run zizmor
+        run: zizmor --offline .
+
+  rust-security:
+    name: Rust Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version 0.22.1
+
+      - name: Run cargo audit
+        run: cargo audit
+
+      - name: Install cargo-deny
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          cargo +1.88.0 install cargo-deny --locked --version 0.19.6
+
+      - name: Run cargo deny
+        run: CARGO="$(rustup which --toolchain 1.88.0 cargo)" cargo-deny check
 
   rust:
     name: Rust
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
 
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: cargo +stable fmt --all -- --check
 
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo +stable clippy --all-targets --all-features -- -D warnings
 
       - name: Run tests
-        run: cargo test --all
+        run: cargo +stable test --all
 
       - name: Build devimg
-        run: cargo build -p devimg
+        run: cargo +stable build -p devimg
 
       - name: Smoke local action optimize
         uses: ./action
