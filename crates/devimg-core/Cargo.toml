@@ -5,7 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 description = "Core image pipeline logic for devimg"
+readme = "README.md"
+keywords = ["image", "responsive", "webp", "avif", "ci"]
+categories = ["multimedia::images", "web-programming"]
 
 [dependencies]
 blake3 = "=1.8.2"

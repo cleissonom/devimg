@@ -6,6 +6,14 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 No unreleased changes.
 
+## 0.1.14
+
+- Prepared public distribution metadata for crates.io.
+- Renamed the CLI package from `devimg-cli` to `devimg` before first crates.io publish, while keeping the binary name `devimg`.
+- Added crates.io package README files for `devimg` and `devimg-core`.
+- Added release archive checksum verification to the GitHub Action download path.
+- Updated public installation, Action, and release documentation for `cargo install devimg` and `v0.1.14`.
+
 ## 0.1.13
 
 - Improved `devimg doctor` framework-consumption diagnostics with common helper discovery, `manifest_helpers` JSON output, and clearer frontend consumption-mode guidance.

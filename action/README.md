@@ -10,7 +10,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.13
+      - uses: cleissonom/devimg/action@v0.1.14
         with:
           config: devimg.toml
           mode: check
@@ -26,7 +26,7 @@ jobs:
           if-no-files-found: error
 ```
 
-Pin the release tag from repositories that can access this Action and the matching release assets. For local smoke tests inside this repository, build the CLI first and pass `binary-path: target/debug/devimg` with `uses: ./action`.
+Pin the release tag from public repositories with `cleissonom/devimg/action@vX.Y.Z`. The Action downloads the matching GitHub Release archive and verifies its SHA-256 checksum before extracting the CLI. For local smoke tests inside this repository, build the CLI first and pass `binary-path: target/debug/devimg` with `uses: ./action`.
 
 ## Inputs
 
@@ -35,7 +35,7 @@ Pin the release tag from repositories that can access this Action and the matchi
 - `working-directory`: command working directory. Default: `.`.
 - `fail-on-warning`: pass `--fail-on-warning` in check mode. Acknowledged warnings remain visible but do not fail strict checks.
 - `binary-path`: use a prebuilt local binary, useful for smoke tests.
-- `version`: release version to download when no binary is found. Default: `v0.1.13`.
+- `version`: release version to download when no binary is found. Default: `v0.1.14`.
 - `report-path`: configured report path appended to the step summary; this does not override `devimg.toml`.
 - `manifest-path`: expected manifest path exposed as an output; this does not override `devimg.toml`.
 - `export-output`: optional checked-in manifest export/helper file to verify in check mode.

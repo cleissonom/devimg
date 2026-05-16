@@ -1,6 +1,9 @@
 name: Dev Image Pipeline
 description: Run devimg check or optimize in GitHub Actions
 author: cleissonom
+branding:
+  icon: image
+  color: blue
 
 inputs:
   config:
@@ -25,7 +28,7 @@ inputs:
   version:
     description: Release version to download when no binary is available
     required: false
-    default: v0.1.13
+    default: v0.1.14
   report-path:
     description: Markdown report path to append to the job summary
     required: false
@@ -117,10 +120,24 @@ runs:
             arm64|aarch64) arch="aarch64" ;;
             *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
           esac
-          url="https://github.com/cleissonom/devimg/releases/download/${DEVIMG_VERSION}/devimg-${os}-${arch}.tar.gz"
+          asset="devimg-${os}-${arch}.tar.gz"
+          url="https://github.com/cleissonom/devimg/releases/download/${DEVIMG_VERSION}/${asset}"
+          checksum_url="$url.sha256"
           mkdir -p "$RUNNER_TEMP/devimg"
-          curl -fsSL "$url" -o "$RUNNER_TEMP/devimg/devimg.tar.gz"
-          tar -xzf "$RUNNER_TEMP/devimg/devimg.tar.gz" -C "$RUNNER_TEMP/devimg"
+          curl -fsSL "$url" -o "$RUNNER_TEMP/devimg/$asset"
+          curl -fsSL "$checksum_url" -o "$RUNNER_TEMP/devimg/$asset.sha256"
+          (
+            cd "$RUNNER_TEMP/devimg"
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum -c "$asset.sha256"
+            elif command -v shasum >/dev/null 2>&1; then
+              shasum -a 256 -c "$asset.sha256"
+            else
+              echo "sha256sum or shasum is required to verify devimg release downloads" >&2
+              exit 1
+            fi
+          )
+          tar -xzf "$RUNNER_TEMP/devimg/$asset" -C "$RUNNER_TEMP/devimg"
           chmod +x "$RUNNER_TEMP/devimg/$bin_name"
           echo "bin=$RUNNER_TEMP/devimg/$bin_name" >> "$GITHUB_OUTPUT"
         fi

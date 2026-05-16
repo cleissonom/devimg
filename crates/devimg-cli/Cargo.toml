@@ -1,11 +1,15 @@
 [package]
-name = "devimg-cli"
+name = "devimg"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 description = "Command-line interface for the Dev Image Pipeline"
+readme = "README.md"
+keywords = ["image", "responsive", "webp", "avif", "ci"]
+categories = ["command-line-utilities", "multimedia::images", "web-programming"]
 
 [[bin]]
 name = "devimg"
@@ -13,7 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "=4.5.57", features = ["derive"] }
-devimg-core = { path = "../devimg-core" }
+devimg-core = { version = "0.1.14", path = "../devimg-core" }
 
 [dev-dependencies]
 serde_json = "1.0.149"

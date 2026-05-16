@@ -13,33 +13,41 @@ DevImg sits above image engines, framework image components, and hosted transfor
 - Hosted image services are powerful for on-the-fly transformations; DevImg stays local-first and CI-first with no required remote storage.
 - Compression tools are useful for one-off optimization; DevImg manages the repeatable source-to-variant workflow.
 
-Current roadmap notes live in `docs/roadmap-v0.1.13.md` and `docs/roadmap-v0.2-ai.md`. Public sharing notes for the next release live in `docs/share-v0.1.13.md`.
+Current roadmap notes live in `docs/roadmap-v0.1.14.md` and `docs/roadmap-v0.2-ai.md`. Public distribution notes live in `docs/public-distribution.md`, and sharing notes live in `docs/share-v0.1.14.md`.
 
 ## Quickstart
 
+Install the CLI from crates.io:
+
 ```bash
-cargo run -p devimg-cli -- init --stdout > devimg.toml
+cargo install devimg
+```
+
+From a local source checkout, use `cargo run -p devimg --` before each command:
+
+```bash
+cargo run -p devimg -- init --stdout > devimg.toml
 # Or choose framework-friendly starter paths:
-cargo run -p devimg-cli -- init --profile next --stdout > devimg.toml
-cargo run -p devimg-cli -- doctor --config devimg.toml
-cargo run -p devimg-cli -- optimize --config devimg.toml
-cargo run -p devimg-cli -- check --config devimg.toml
-cargo run -p devimg-cli -- doctor --config devimg.toml
+cargo run -p devimg -- init --profile next --stdout > devimg.toml
+cargo run -p devimg -- doctor --config devimg.toml
+cargo run -p devimg -- optimize --config devimg.toml
+cargo run -p devimg -- check --config devimg.toml
+cargo run -p devimg -- doctor --config devimg.toml
 ```
 
 Useful commands:
 
 ```bash
-cargo run -p devimg-cli -- doctor --config examples/portfolio/devimg.toml
-cargo run -p devimg-cli -- doctor --config examples/portfolio/devimg.toml --json
-cargo run -p devimg-cli -- agent init --target both --stdout
-cargo run -p devimg-cli -- optimize --config examples/portfolio/devimg.toml --dry-run
-cargo run -p devimg-cli -- report --manifest examples/portfolio/public/images/devimg-manifest.json
-cargo run -p devimg-cli -- review --manifest examples/portfolio/public/images/devimg-manifest.json --output examples/portfolio/.devimg/review.html
-cargo run -p devimg-cli -- optimize --config examples/dogfood/devimg.toml
-cargo run -p devimg-cli -- manifest export --manifest examples/portfolio/public/images/devimg-manifest.json
-cargo run -p devimg-cli -- compare --base old-devimg-manifest.json --head public/images/devimg-manifest.json
-cargo run -p devimg-cli -- inspect fixtures/images/sample.png
+cargo run -p devimg -- doctor --config examples/portfolio/devimg.toml
+cargo run -p devimg -- doctor --config examples/portfolio/devimg.toml --json
+cargo run -p devimg -- agent init --target both --stdout
+cargo run -p devimg -- optimize --config examples/portfolio/devimg.toml --dry-run
+cargo run -p devimg -- report --manifest examples/portfolio/public/images/devimg-manifest.json
+cargo run -p devimg -- review --manifest examples/portfolio/public/images/devimg-manifest.json --output examples/portfolio/.devimg/review.html
+cargo run -p devimg -- optimize --config examples/dogfood/devimg.toml
+cargo run -p devimg -- manifest export --manifest examples/portfolio/public/images/devimg-manifest.json
+cargo run -p devimg -- compare --base old-devimg-manifest.json --head public/images/devimg-manifest.json
+cargo run -p devimg -- inspect fixtures/images/sample.png
 ```
 
 Recommended local loop:
@@ -326,7 +334,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.13
+      - uses: cleissonom/devimg/action@v0.1.14
         with:
           config: devimg.toml
           mode: check
@@ -342,7 +350,7 @@ jobs:
           if-no-files-found: error
 ```
 
-This repository's CI smoke test builds the CLI, runs the local composite Action with `uses: ./action`, and passes `binary-path: target/debug/devimg`. Repositories that can access this repository's Action and release assets can pin the release tag shown above.
+This repository's CI smoke test builds the CLI, runs the local composite Action with `uses: ./action`, and passes `binary-path: target/debug/devimg`. Public repositories can pin the release tag shown above; the Action downloads the matching GitHub Release archive and verifies its SHA-256 checksum before running.
 
 When `export-output` is set, the Action runs `devimg manifest export --check` after `devimg check --no-report` and fails if the checked-in helper file is missing or stale. It does not rewrite the helper. Set `export-typescript-helpers: "true"` when the checked-in TypeScript file was generated with `--typescript-helpers`.
 
@@ -363,8 +371,8 @@ cargo test --all
 Create a version tag that matches the workspace version and push it:
 
 ```bash
-git tag v0.1.13
-git push origin v0.1.13
+git tag v0.1.14
+git push origin v0.1.14
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

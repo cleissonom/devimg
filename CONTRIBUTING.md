@@ -10,7 +10,7 @@ Use Rust `1.85` or newer.
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all
-cargo build --locked -p devimg-cli
+cargo build --locked -p devimg
 ```
 
 ## Development Loop
@@ -18,15 +18,15 @@ cargo build --locked -p devimg-cli
 For pipeline changes, verify the example project:
 
 ```bash
-cargo run -p devimg-cli -- optimize --config examples/portfolio/devimg.toml --dry-run
-cargo run -p devimg-cli -- optimize --config examples/portfolio/devimg.toml --allow-overwrite
-cargo run -p devimg-cli -- check --config examples/portfolio/devimg.toml
-cargo run -p devimg-cli -- review --manifest examples/portfolio/public/images/devimg-manifest.json --output examples/portfolio/.devimg/review.html --force
-cargo run -p devimg-cli -- optimize --config examples/dogfood/devimg.toml --dry-run
-cargo run -p devimg-cli -- optimize --config examples/dogfood/devimg.toml --allow-overwrite
-cargo run -p devimg-cli -- check --config examples/dogfood/devimg.toml
-cargo run -p devimg-cli -- manifest export --manifest examples/dogfood/public/images/devimg-manifest.json --format typescript --strip-prefix public --url-prefix / --typescript-helpers --output /tmp/devimg-dogfood.generated.ts
-cargo run -p devimg-cli -- review --manifest examples/dogfood/public/images/devimg-manifest.json --output examples/dogfood/.devimg/review.html --force
+cargo run -p devimg -- optimize --config examples/portfolio/devimg.toml --dry-run
+cargo run -p devimg -- optimize --config examples/portfolio/devimg.toml --allow-overwrite
+cargo run -p devimg -- check --config examples/portfolio/devimg.toml
+cargo run -p devimg -- review --manifest examples/portfolio/public/images/devimg-manifest.json --output examples/portfolio/.devimg/review.html --force
+cargo run -p devimg -- optimize --config examples/dogfood/devimg.toml --dry-run
+cargo run -p devimg -- optimize --config examples/dogfood/devimg.toml --allow-overwrite
+cargo run -p devimg -- check --config examples/dogfood/devimg.toml
+cargo run -p devimg -- manifest export --manifest examples/dogfood/public/images/devimg-manifest.json --format typescript --strip-prefix public --url-prefix / --typescript-helpers --output /tmp/devimg-dogfood.generated.ts
+cargo run -p devimg -- review --manifest examples/dogfood/public/images/devimg-manifest.json --output examples/dogfood/.devimg/review.html --force
 ```
 
 Before finishing a change, run:

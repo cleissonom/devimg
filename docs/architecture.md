@@ -8,7 +8,7 @@ config -> scan -> plan -> read-only check -> doctor diagnostics
 ```
 
 - `devimg-core` owns config parsing, source scanning, planning, transforms, manifest/report generation, check semantics, and doctor diagnostics.
-- `devimg-cli` owns command parsing, starter init profiles, agent instruction generation, user output, and exit codes.
+- The `devimg` CLI package owns command parsing, starter init profiles, agent instruction generation, user output, and exit codes.
 - `action/` owns GitHub-specific invocation and summary output.
 
 Core modules:

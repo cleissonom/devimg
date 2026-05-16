@@ -36,7 +36,7 @@ jobs:
         run: cargo test --all
 
       - name: Build devimg
-        run: cargo build -p devimg-cli
+        run: cargo build -p devimg
 
       - name: Smoke local action optimize
         uses: ./action

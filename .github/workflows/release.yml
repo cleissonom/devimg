@@ -56,7 +56,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; data=json.load(sys.stdin); print(next(p["version"] for p in data["packages"] if p["name"] == "devimg-cli"))')"
+          version="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; data=json.load(sys.stdin); print(next(p["version"] for p in data["packages"] if p["name"] == "devimg"))')"
           expected="v$version"
           if [[ "$RELEASE_TAG" != "$expected" ]]; then
             echo "release tag $RELEASE_TAG does not match crate version $expected" >&2
@@ -64,7 +64,7 @@ jobs:
           fi
 
       - name: Build release binary
-        run: cargo build --locked --release -p devimg-cli --target ${{ matrix.target }}
+        run: cargo build --locked --release -p devimg --target ${{ matrix.target }}
 
       - name: Package release archive
         shell: bash

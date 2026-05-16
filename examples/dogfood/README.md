@@ -19,17 +19,17 @@ This is the main example for public demos:
 Run the local loop:
 
 ```bash
-cargo run -p devimg-cli -- doctor --config examples/dogfood/devimg.toml
-cargo run -p devimg-cli -- optimize --config examples/dogfood/devimg.toml
-cargo run -p devimg-cli -- check --config examples/dogfood/devimg.toml
-cargo run -p devimg-cli -- manifest export \
+cargo run -p devimg -- doctor --config examples/dogfood/devimg.toml
+cargo run -p devimg -- optimize --config examples/dogfood/devimg.toml
+cargo run -p devimg -- check --config examples/dogfood/devimg.toml
+cargo run -p devimg -- manifest export \
   --manifest examples/dogfood/public/images/devimg-manifest.json \
   --format typescript \
   --strip-prefix public \
   --url-prefix / \
   --typescript-helpers \
   --output examples/dogfood/lib/devimg.generated.ts
-cargo run -p devimg-cli -- review \
+cargo run -p devimg -- review \
   --manifest examples/dogfood/public/images/devimg-manifest.json \
   --output examples/dogfood/.devimg/review.html
 ```
