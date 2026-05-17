@@ -405,3 +405,7 @@ The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256
 - Stable source image scope is PNG, JPEG, and WebP. AVIF is supported as an opt-in output format only.
 - `quality` controls lossy JPEG, WebP, and AVIF output. PNG remains lossless and ignores `quality`.
 - The Action does not commit generated files, upload artifacts automatically, or post PR comments.
+
+## License
+
+DevImg is licensed under the Apache License, Version 2.0. See `LICENSE`.
