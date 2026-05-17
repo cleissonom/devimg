@@ -34,7 +34,7 @@ jobs:
           if-no-files-found: error
 ```
 
-Use `uses: ./action` plus `binary-path: target/debug/devimg` when testing the Action from this repository's local checkout after building the CLI. Public repositories can pin the release tag shown above.
+Use `uses: ./action` plus `binary-path: target/debug/devimg` when testing the Action from this repository's local checkout after building the CLI. Consumer repositories should pin a release tag, as shown above.
 
 `report-path` and `manifest-path` describe files for summary/output metadata. Configure the actual report and manifest paths in `devimg.toml`.
 
@@ -57,4 +57,4 @@ Set `review-output` when the workflow should produce a static visual review arti
 
 The default `version` input is `v0.1.14`, which maps to release assets such as `devimg-linux-x86_64.tar.gz`. The Action downloads the matching `.sha256` file and verifies the archive before extraction.
 
-The MVP does not post PR comments, commit generated image files, rewrite reports in check mode, or rewrite manifest helper files.
+The Action does not post PR comments, commit generated image files, rewrite reports in check mode, or rewrite manifest helper files.

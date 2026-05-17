@@ -1,6 +1,6 @@
 # Fixtures
 
-Fixture images are generated locally for the MVP verification run:
+Fixture images are generated locally for verification:
 
 - `fixtures/images/sample.png`
 - `examples/portfolio/assets/images/card.png`
