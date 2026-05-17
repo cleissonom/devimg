@@ -1,6 +1,6 @@
 # Legacy Tool Compatibility
 
-This MVP preserves the useful behavior from the sibling `imgconvert` and `imgcrop` tools without depending on those relative paths.
+DevImg preserves the useful behavior from the sibling `imgconvert` and `imgcrop` ideas without depending on those relative paths.
 
 - Source extension normalization accepts `jpg`, `jpeg`, `png`, and `webp`.
 - Output format normalization accepts `jpg`, `jpeg`, `png`, `webp`, and opt-in `avif`.

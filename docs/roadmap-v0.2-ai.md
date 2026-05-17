@@ -89,9 +89,9 @@ Rules:
 - Should work without external AI APIs.
 - Can be used as a bridge from deterministic DevImg state to Codex/Claude prompts.
 
-### 5. `devimg social`
+### 5. `devimg draft`
 
-Generate release/project sharing drafts from deterministic DevImg outputs.
+Generate release, documentation, and project-page drafts from deterministic DevImg outputs.
 
 Potential inputs:
 
@@ -103,7 +103,6 @@ Potential inputs:
 
 Potential output:
 
-- LinkedIn draft;
 - README release note draft;
 - short project-page copy;
 - technical blog outline.
@@ -193,9 +192,9 @@ Use structured outputs that can be diffed and consumed by agents:
 - Keep outputs advisory and reviewable.
 - Add redaction/privacy docs and tests for refusal to overwrite existing outputs.
 
-### Phase 4: Sharing Drafts
+### Phase 4: Documentation Drafts
 
-- Add `devimg social` after release/report data is stable enough.
+- Add `devimg draft` after release/report data is stable enough.
 - Generate reviewable Markdown drafts only.
 
 ## Done Criteria For v0.2

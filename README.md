@@ -2,7 +2,7 @@
 
 `devimg` is a Rust CLI and GitHub Action for deterministic web image variants. It scans configured PNG/JPEG/WebP image folders, generates responsive PNG/JPEG/WebP/AVIF outputs, writes a JSON manifest and Markdown report, and lets CI fail when generated images are missing, stale, or over budget.
 
-The MVP has no web UI and no remote storage. The CLI is the source of truth; the GitHub Action wraps `devimg check` or `devimg optimize`, can verify checked-in manifest exports, and can create an optional static review artifact for CI upload.
+DevImg has no web UI and no remote storage. The CLI is the source of truth; the GitHub Action wraps `devimg check` or `devimg optimize`, can verify checked-in manifest exports, and can create an optional static review artifact for CI upload.
 
 ## Where DevImg Fits
 
@@ -13,7 +13,7 @@ DevImg sits above image engines, framework image components, and hosted transfor
 - Hosted image services are powerful for on-the-fly transformations; DevImg stays local-first and CI-first with no required remote storage.
 - Compression tools are useful for one-off optimization; DevImg manages the repeatable source-to-variant workflow.
 
-Current roadmap notes live in `docs/roadmap-v0.1.14.md` and `docs/roadmap-v0.2-ai.md`. Public distribution notes live in `docs/public-distribution.md`, and sharing notes live in `docs/share-v0.1.14.md`.
+Detailed docs live in `docs/`: configuration, GitHub Action usage, release/distribution, architecture, compatibility, AI-agent workflow, and the public v0.2 AI roadmap.
 
 ## Quickstart
 
@@ -305,7 +305,7 @@ fit = "contain"
 - `doctor` is read-only. It does not generate images, rewrite reports, update manifests, or touch manifest export files.
 - `optimize --dry-run` plans work without writing files.
 - Existing unmanaged outputs are not overwritten unless config `overwrite = true` or CLI `--allow-overwrite` is used.
-- Re-encoding strips metadata by default. `strip_metadata = false` is parsed, but the MVP encoders do not preserve source metadata.
+- Re-encoding strips metadata by default. `strip_metadata = false` is parsed, but the current encoders do not preserve source metadata.
 - `check` fails on missing outputs, stale manifests, modified outputs, outdated config hashes, and byte budget violations. Add `--fail-on-warning` when advisory warnings should fail CI, or `--no-report` when a wrapper needs read-only validation without rewriting the Markdown report.
 
 Exit codes are stable for CI:
@@ -400,7 +400,7 @@ git push origin v0.1.14
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.
 
-## MVP Limits
+## Current Limits
 
 - Stable source image scope is PNG, JPEG, and WebP. AVIF is supported as an opt-in output format only.
 - `quality` controls lossy JPEG, WebP, and AVIF output. PNG remains lossless and ignores `quality`.

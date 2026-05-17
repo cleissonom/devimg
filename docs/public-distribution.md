@@ -1,24 +1,59 @@
-# Public Distribution
+# Distribution
 
-This document tracks DevImg's first intentionally public release and the follow-up work needed to keep the public story accurate.
+DevImg is distributed as public crates.io packages, GitHub Release binaries, and a subdirectory GitHub Action.
 
-## Current Public State
+## Public Channels
 
 - Repository: <https://github.com/cleissonom/devimg>
 - CLI crate: <https://crates.io/crates/devimg>
 - Core crate: <https://crates.io/crates/devimg-core>
-- Current public release: `v0.1.14`
+- Current release: `v0.1.14`
 - Minimum Rust version for source installs: `1.85`
-- Public Action reference: `cleissonom/devimg/action@v0.1.14`
+- GitHub Action: `cleissonom/devimg/action@v0.1.14`
 
-## Public Readiness Checklist
+## CLI Install
 
-- Confirm the working tree contains no ignored planning files or local artifacts.
-- Run the full local verification set in `docs/release.md`.
+The primary install path is crates.io:
+
+```bash
+cargo install devimg
+devimg --version
+```
+
+Source installs require Rust 1.85 or newer. If the active default toolchain is older, run `rustup update stable` or install with an explicit toolchain:
+
+```bash
+cargo +1.85.1 install devimg
+```
+
+Users who do not want to build from source can download a GitHub Release archive for their platform and verify the matching `.sha256` checksum before running the binary.
+
+## GitHub Action
+
+Consumer workflows should pin a release tag:
+
+```yaml
+- uses: cleissonom/devimg/action@v0.1.14
+  with:
+    config: devimg.toml
+    mode: check
+```
+
+The Action downloads the matching GitHub Release archive, verifies its `.sha256` checksum, and runs `devimg`. Projects can pass `binary-path` when testing the Action from a local checkout.
+
+The Action is not published through GitHub Marketplace. It intentionally lives under `action/` in this repository until a separate Marketplace release becomes useful.
+
+## Maintainer Checklist
+
+Before a public release:
+
+- Confirm the version is consistent across the workspace, docs, Action defaults, and changelog.
+- Run the verification commands in `docs/release.md`.
 - Run `scripts/security-checks.sh`.
-- Confirm the GitHub Actions `Gitleaks`, `Rust Security`, `Workflow Security`, `CodeQL`, and `Scorecard` jobs pass.
-- Review public docs for private-only wording, personal paths, or private tokens.
-- Confirm GitHub repository description and topics are set.
+- Confirm GitHub security jobs pass after the release commit is pushed.
+- Publish `devimg-core` before `devimg`.
+- Tag the same commit after crates.io publish succeeds.
+- Verify the release workflow published archives and checksum files for Linux, macOS, and Windows.
 
 Suggested repository description:
 
@@ -32,82 +67,12 @@ Suggested topics:
 rust, cli, images, image-optimization, responsive-images, web-performance, github-actions, ci, static-site, nextjs, astro, vite
 ```
 
-## crates.io
+## Distribution Boundaries
 
-Publish the library first, then the CLI:
+Current public distribution does not include:
 
-```bash
-cargo login <crates.io-api-token>
-cargo +1.85.1 publish -p devimg-core
-cargo +1.85.1 publish --dry-run -p devimg
-cargo +1.85.1 publish -p devimg
-```
-
-Publish `devimg-core` first because the CLI package depends on it through a registry version plus local path dependency.
-Wait until the new `devimg-core` version appears in the crates.io index before publishing `devimg`; otherwise the CLI publish will fail with `no matching package named devimg-core found`.
-
-After publish, verify install with a Rust 1.85+ toolchain:
-
-```bash
-cargo install devimg
-devimg --version
-devimg --help
-```
-
-Crates are effectively permanent. If a bad version is published, yank it with `cargo yank`; do not treat yanking as secret removal.
-
-## GitHub Release
-
-After crates.io publish succeeds, tag the same commit:
-
-```bash
-git tag v0.1.14
-git push origin v0.1.14
-```
-
-Wait for the Release workflow to publish Linux, macOS, and Windows archives plus `.sha256` files. Download one archive, verify its checksum, and run `devimg --version`.
-
-## Public GitHub Action
-
-Users can run:
-
-```yaml
-- uses: cleissonom/devimg/action@v0.1.14
-  with:
-    config: devimg.toml
-    mode: check
-```
-
-The Action downloads the matching release archive, verifies the `.sha256` checksum, and runs `devimg`.
-
-Do not pursue GitHub Marketplace for this release. The current Action intentionally lives under `action/` in the main repository; Marketplace can be revisited later with a separate root-level Action repository if public usage justifies it.
-
-## cleisson.com
-
-Keep the DevImg project page aligned with:
-
-- crates.io install command: `cargo install devimg`;
-- public Action usage: `cleissonom/devimg/action@v0.1.14`;
-- release binary checksum verification;
-- dogfood proof from `cleisson.com` CI and production usage;
-- a link to the visual review artifact flow.
-
-## LinkedIn Sequence
-
-Post 1: Launch and problem.
-
-- Frontend image variants drift easily.
-- DevImg keeps source images, generated variants, manifest, report, helper exports, and CI checks together.
-- Ask for early users who maintain image-heavy frontend repos.
-
-Post 2: Technical workflow.
-
-- Show `devimg.toml`, `devimg optimize`, `devimg manifest export`, `devimg check`, and `devimg review`.
-- Include a screenshot of the static review artifact.
-- Emphasize deterministic local-first behavior, not SaaS.
-
-Post 3: Dogfood case study.
-
-- Explain how `cleisson.com` uses generated project images.
-- Mention content-hash filenames, Vercel/CDN compatibility, and CI enforcement.
-- Ask for feedback on framework consumption patterns.
+- automatic crates.io publishing from CI;
+- a generic shell installer;
+- a GitHub Marketplace listing;
+- hosted image storage, accounts, dashboards, or SaaS features;
+- automatic PR commits from the Action.

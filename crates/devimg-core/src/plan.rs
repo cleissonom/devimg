@@ -22,7 +22,7 @@ pub fn build_plan(config: &Config, sources: &[SourceImage]) -> Result<Plan> {
     if !config.project.strip_metadata {
         warnings.push(warning_message(
             PLAN_METADATA_NOT_PRESERVED,
-            "strip_metadata=false was requested, but MVP encoders re-encode images and do not preserve source metadata",
+            "strip_metadata=false was requested, but current encoders re-encode images and do not preserve source metadata",
         ));
     }
 

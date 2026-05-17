@@ -18,7 +18,7 @@ Profiles only choose starter paths and source names. They do not add new config 
 - `manifest`: JSON manifest path relative to `root`.
 - `report`: Markdown report path relative to `root`.
 - `overwrite`: defaults to `false`; when false, changed existing outputs are refused.
-- `strip_metadata`: defaults to `true`; MVP re-encoding strips metadata.
+- `strip_metadata`: defaults to `true`; current re-encoding strips metadata.
 - `content_hash_filenames`: defaults to `false`; when true, generated output filenames include a short hash fragment derived from the encoded output bytes. Aliases: `hash_filenames`, `hashed_filenames`.
 
 Default filenames are deterministic:
