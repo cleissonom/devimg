@@ -1,6 +1,14 @@
 # DevImg v0.1.14 Share Package
 
-Use this file when preparing the first public distribution announcement. Keep the wording grounded in what DevImg does today.
+Use this file for the first public distribution announcement. Keep the wording grounded in what DevImg does today.
+
+## Public Links
+
+- Repository: <https://github.com/cleissonom/devimg>
+- CLI package: <https://crates.io/crates/devimg>
+- Core package: <https://crates.io/crates/devimg-core>
+- Release: <https://github.com/cleissonom/devimg/releases/tag/v0.1.14>
+- Action usage: `cleissonom/devimg/action@v0.1.14`
 
 ## Positioning
 
@@ -14,7 +22,7 @@ Longer description:
 
 ## Launch Draft
 
-I have been building DevImg, a Rust CLI and GitHub Action for frontend image pipelines.
+I published DevImg `v0.1.14`, a Rust CLI and GitHub Action for frontend image pipelines.
 
 The problem: generated web images often drift from their source files, get committed without clear review context, or depend on hidden build steps. DevImg keeps that workflow explicit:
 
@@ -26,6 +34,42 @@ The problem: generated web images often drift from their source files, get commi
 It is local-first and repository-first. No hosted service, remote storage, or automatic PR bot. The goal is to make image changes easy to reproduce, review, and enforce in frontend projects.
 
 I am dogfooding it on `cleisson.com`, including project-card and banner images served through the normal frontend/Vercel/CDN flow.
+
+Install with Rust 1.85+:
+
+```bash
+cargo install devimg
+```
+
+GitHub Action:
+
+```yaml
+- uses: cleissonom/devimg/action@v0.1.14
+  with:
+    config: devimg.toml
+    mode: check
+```
+
+I am looking for early users with image-heavy frontend repositories, especially Next.js, Astro, Vite, and static-site projects.
+
+Repository: https://github.com/cleissonom/devimg
+Package: https://crates.io/crates/devimg
+
+## Short Launch Post
+
+I published DevImg `v0.1.14`.
+
+It is a Rust CLI and GitHub Action for frontend repositories that want image variants to be deterministic, reviewable, and enforced in CI.
+
+The workflow is:
+
+- define sources and presets in `devimg.toml`;
+- run `devimg optimize`;
+- commit generated variants, manifest, report, and optional TypeScript helper export;
+- run `devimg check` in CI;
+- inspect changes with `devimg review`.
+
+It is not a hosted image service or PR bot. It is a local-first pipeline for teams that want generated web images to behave like normal build artifacts.
 
 Install:
 
@@ -42,7 +86,7 @@ GitHub Action:
     mode: check
 ```
 
-I am looking for early users with image-heavy frontend repositories, especially Next.js, Astro, Vite, and static-site projects.
+I am looking for early feedback from people maintaining image-heavy Next.js, Astro, Vite, or static-site projects.
 
 ## Screenshot Ideas
 

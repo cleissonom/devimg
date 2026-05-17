@@ -1,14 +1,22 @@
 # Public Distribution
 
-This checklist is for the first intentionally public DevImg release.
+This document tracks DevImg's first intentionally public release and the follow-up work needed to keep the public story accurate.
 
-## Before Making The Repo Public
+## Current Public State
+
+- Repository: <https://github.com/cleissonom/devimg>
+- CLI crate: <https://crates.io/crates/devimg>
+- Core crate: <https://crates.io/crates/devimg-core>
+- Current public release: `v0.1.14`
+- Minimum Rust version for source installs: `1.85`
+- Public Action reference: `cleissonom/devimg/action@v0.1.14`
+
+## Public Readiness Checklist
 
 - Confirm the working tree contains no ignored planning files or local artifacts.
 - Run the full local verification set in `docs/release.md`.
 - Run `scripts/security-checks.sh`.
-- Confirm the GitHub Actions `Gitleaks`, `Rust Security`, and `Workflow Security` jobs pass on the public-distribution branch.
-- After the repository is public, confirm the public-only `CodeQL` and `Scorecard` workflows pass.
+- Confirm the GitHub Actions `Gitleaks`, `Rust Security`, `Workflow Security`, `CodeQL`, and `Scorecard` jobs pass.
 - Review public docs for private-only wording, personal paths, or private tokens.
 - Confirm GitHub repository description and topics are set.
 
@@ -26,7 +34,7 @@ rust, cli, images, image-optimization, responsive-images, web-performance, githu
 
 ## crates.io
 
-The first public publish should reserve both package names:
+Publish the library first, then the CLI:
 
 ```bash
 cargo login <crates.io-api-token>
@@ -38,7 +46,7 @@ cargo +1.85.1 publish -p devimg
 Publish `devimg-core` first because the CLI package depends on it through a registry version plus local path dependency.
 Wait until the new `devimg-core` version appears in the crates.io index before publishing `devimg`; otherwise the CLI publish will fail with `no matching package named devimg-core found`.
 
-After publish:
+After publish, verify install with a Rust 1.85+ toolchain:
 
 ```bash
 cargo install devimg
@@ -61,7 +69,7 @@ Wait for the Release workflow to publish Linux, macOS, and Windows archives plus
 
 ## Public GitHub Action
 
-After the repository is public and `v0.1.14` release assets exist, users can run:
+Users can run:
 
 ```yaml
 - uses: cleissonom/devimg/action@v0.1.14
@@ -76,7 +84,7 @@ Do not pursue GitHub Marketplace for this release. The current Action intentiona
 
 ## cleisson.com
 
-After the public release is live, update the DevImg project page with:
+Keep the DevImg project page aligned with:
 
 - crates.io install command: `cargo install devimg`;
 - public Action usage: `cleissonom/devimg/action@v0.1.14`;

@@ -10,6 +10,8 @@ Install from crates.io:
 cargo install devimg
 ```
 
+Requires Rust 1.85 or newer when installing from source.
+
 Then initialize a project:
 
 ```bash
