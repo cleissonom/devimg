@@ -26,9 +26,9 @@ Publish the library first, then the CLI:
 
 ```bash
 cargo login <crates.io-api-token>
-cargo publish -p devimg-core
-cargo publish --dry-run -p devimg
-cargo publish -p devimg
+cargo +1.85.1 publish -p devimg-core
+cargo +1.85.1 publish --dry-run -p devimg
+cargo +1.85.1 publish -p devimg
 ```
 
 `cargo install devimg` installs the CLI binary named `devimg`.
@@ -59,6 +59,8 @@ You can also rerun the workflow manually for an existing tag from GitHub Actions
 cargo install devimg
 devimg --help
 ```
+
+Source installs require Rust 1.85 or newer. If the active default toolchain is older, use `rustup update stable` or run `cargo +1.85.1 install devimg`.
 
 ## Install From GitHub
 

@@ -23,6 +23,17 @@ Install the CLI from crates.io:
 cargo install devimg
 ```
 
+Source installs require Rust 1.85 or newer. If your default toolchain is older, run `rustup update stable` or install with an explicit toolchain such as `cargo +1.85.1 install devimg`.
+
+Then use the installed binary:
+
+```bash
+devimg init --stdout > devimg.toml
+devimg doctor --config devimg.toml
+devimg optimize --config devimg.toml
+devimg check --config devimg.toml
+```
+
 From a local source checkout, use `cargo run -p devimg --` before each command:
 
 ```bash
@@ -374,7 +385,13 @@ scripts/security-checks.sh
 
 ## Release
 
-Create a version tag that matches the workspace version and push it:
+Public releases are published to crates.io and GitHub Releases. The current public install path is:
+
+```bash
+cargo install devimg
+```
+
+Create a version tag that matches the workspace version and push it after publishing crates:
 
 ```bash
 git tag v0.1.14
