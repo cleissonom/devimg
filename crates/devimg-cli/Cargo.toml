@@ -16,7 +16,7 @@ name = "devimg"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "=4.5.57", features = ["derive"] }
+clap = { version = "=4.6.1", features = ["derive"] }
 devimg-core = { version = "0.1.14", path = "../devimg-core" }
 
 [dev-dependencies]
