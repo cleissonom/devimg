@@ -14,6 +14,8 @@ use crate::pipeline::{path_to_string, CheckIssue};
 use crate::warnings::warning_info;
 use crate::{build_plan, scan_sources, DevimgError, Result};
 
+const DEFAULT_CONFIG_PATH: &str = "devimg.toml";
+
 #[derive(Debug, Clone, Default)]
 pub struct DoctorOptions {
     pub manifest_export: Option<DoctorManifestExportOptions>,
@@ -591,17 +593,25 @@ fn next_command(
 
 fn optimize_command(config_path: &str) -> String {
     format!(
-        "devimg optimize --config {} --allow-overwrite",
-        shell_arg(config_path)
+        "devimg optimize{} --allow-overwrite",
+        config_option(config_path)
     )
 }
 
 fn check_command(config_path: &str) -> String {
-    format!("devimg check --config {}", shell_arg(config_path))
+    format!("devimg check{}", config_option(config_path))
 }
 
 fn doctor_command(config_path: &str) -> String {
-    format!("devimg doctor --config {}", shell_arg(config_path))
+    format!("devimg doctor{}", config_option(config_path))
+}
+
+fn config_option(config_path: &str) -> String {
+    if config_path == DEFAULT_CONFIG_PATH {
+        String::new()
+    } else {
+        format!(" --config {}", shell_arg(config_path))
+    }
 }
 
 fn shell_arg(value: &str) -> String {

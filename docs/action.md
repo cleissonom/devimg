@@ -20,7 +20,6 @@ jobs:
       - uses: actions/checkout@v6
       - uses: cleissonom/devimg/action@v0.1.14
         with:
-          config: devimg.toml
           mode: check
           export-output: lib/devimg.generated.ts
           export-format: typescript
@@ -36,7 +35,7 @@ jobs:
 
 Use `uses: ./action` plus `binary-path: target/debug/devimg` when testing the Action from this repository's local checkout after building the CLI. Consumer repositories should pin a release tag, as shown above.
 
-`report-path` and `manifest-path` describe files for summary/output metadata. Configure the actual report and manifest paths in `devimg.toml`.
+The Action uses `devimg.toml` by default. Set `config` only when the project keeps the DevImg config somewhere else. `report-path` and `manifest-path` describe files for summary/output metadata. Configure the actual report and manifest paths in `devimg.toml`.
 
 In `mode: check`, the Action runs `devimg check --no-report` so CI validation does not rewrite the configured Markdown report. The job summary uses the command output when no report file exists.
 

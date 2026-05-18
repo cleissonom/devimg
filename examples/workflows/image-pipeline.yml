@@ -16,7 +16,6 @@ jobs:
       - uses: actions/checkout@v6
       - uses: cleissonom/devimg/action@v0.1.14
         with:
-          config: devimg.toml
           mode: check
           export-output: lib/devimg.generated.ts
           export-format: typescript

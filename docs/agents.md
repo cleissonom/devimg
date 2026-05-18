@@ -1,6 +1,6 @@
 # AI Agent Workflow
 
-Run `devimg doctor --config devimg.toml` before changing source images, `devimg.toml`, generated variants, manifests, reports, or app helper files. The doctor output is the project-state contract for Codex, Claude Code, and other coding agents.
+Run `devimg doctor` before changing source images, `devimg.toml`, generated variants, manifests, reports, or app helper files. The doctor output is the project-state contract for Codex, Claude Code, and other coding agents.
 
 The full agent contract lives in `docs/agent-contract.md`. Use it as the file ownership and safety policy when a project has DevImg-managed assets.
 
@@ -9,13 +9,15 @@ Roadmap planning for future AI-assisted features lives in `docs/roadmap-v0.2-ai.
 Recommended loop:
 
 ```bash
-devimg doctor --config devimg.toml
-devimg optimize --config devimg.toml --allow-overwrite
+devimg doctor
+devimg optimize --allow-overwrite
 devimg manifest export --manifest public/images/devimg-manifest.json --strip-prefix public --url-prefix / --format typescript --output lib/devimg.generated.ts
 devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html
-devimg check --config devimg.toml
-devimg doctor --config devimg.toml --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
+devimg check
+devimg doctor --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 ```
+
+`devimg.toml` is the default config path. Use `--config <path>` only when a project keeps the DevImg config somewhere else.
 
 If the generated TypeScript helper was created with `--typescript-helpers`, use the same flag in `doctor --export-output`, `manifest export --check`, and Action export drift checks.
 

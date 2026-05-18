@@ -29,9 +29,9 @@ Then use the installed binary:
 
 ```bash
 devimg init --stdout > devimg.toml
-devimg doctor --config devimg.toml
-devimg optimize --config devimg.toml
-devimg check --config devimg.toml
+devimg doctor
+devimg optimize
+devimg check
 ```
 
 From a local source checkout, use `cargo run -p devimg --` before each command:
@@ -40,11 +40,13 @@ From a local source checkout, use `cargo run -p devimg --` before each command:
 cargo run -p devimg -- init --stdout > devimg.toml
 # Or choose framework-friendly starter paths:
 cargo run -p devimg -- init --profile next --stdout > devimg.toml
-cargo run -p devimg -- doctor --config devimg.toml
-cargo run -p devimg -- optimize --config devimg.toml
-cargo run -p devimg -- check --config devimg.toml
-cargo run -p devimg -- doctor --config devimg.toml
+cargo run -p devimg -- doctor
+cargo run -p devimg -- optimize
+cargo run -p devimg -- check
+cargo run -p devimg -- doctor
 ```
+
+`devimg.toml` is the default config path. Use `--config <path>` only when a project keeps its config somewhere else, such as the example fixtures below.
 
 Useful commands:
 
@@ -64,11 +66,11 @@ cargo run -p devimg -- inspect fixtures/images/sample.png
 Recommended local loop:
 
 ```bash
-devimg doctor --config devimg.toml
-devimg optimize --config devimg.toml --allow-overwrite
+devimg doctor
+devimg optimize --allow-overwrite
 devimg manifest export --manifest public/images/devimg-manifest.json --strip-prefix public --url-prefix / --format typescript --output lib/devimg.generated.ts
-devimg check --config devimg.toml
-devimg doctor --config devimg.toml --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
+devimg check
+devimg doctor --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html --force
 ```
 
@@ -196,7 +198,6 @@ Helper-mode TypeScript still exports `DEVIMG_MANIFEST`; it also exports `findDev
 
 ```bash
 devimg doctor \
-  --config devimg.toml \
   --export-output lib/devimg.generated.ts \
   --export-format typescript \
   --strip-prefix public \
@@ -211,7 +212,7 @@ Use `compare` when reviewing image PRs or checking why a branch changed generate
 
 ```bash
 cp public/images/devimg-manifest.json /tmp/devimg-base-manifest.json
-devimg optimize --config devimg.toml --allow-overwrite
+devimg optimize --allow-overwrite
 devimg compare --base /tmp/devimg-base-manifest.json --head public/images/devimg-manifest.json
 ```
 
@@ -240,7 +241,7 @@ Use `--stdout` when another tool should capture the artifact directly:
 devimg review --manifest public/images/devimg-manifest.json --stdout
 ```
 
-The review groups variants by source image, shows source and generated previews, dimensions, formats, byte sizes, hashes, largest sources, largest outputs, and manifest-only warnings such as upscaled variants or outputs larger than their source files. It has no external scripts, no CDN assets, and no tracking. Because it only reads the manifest, budget status is shown as not evaluated; run `devimg check --config devimg.toml` for budget enforcement.
+The review groups variants by source image, shows source and generated previews, dimensions, formats, byte sizes, hashes, largest sources, largest outputs, and manifest-only warnings such as upscaled variants or outputs larger than their source files. It has no external scripts, no CDN assets, and no tracking. Because it only reads the manifest, budget status is shown as not evaluated; run `devimg check` for budget enforcement.
 
 `review --output` refuses to overwrite an existing file unless `--force` is passed. When written inside the project, for example `.devimg/review.html`, image links are made relative to the artifact so the file can be opened directly in a browser.
 
@@ -258,7 +259,7 @@ Warnings currently cover:
 Use stricter CI when warnings should block a branch:
 
 ```bash
-devimg check --config devimg.toml --fail-on-warning
+devimg check --fail-on-warning
 ```
 
 Use `devimg doctor --json` when an AI agent or CI tool needs machine-readable warning entries such as `quality:cover-crop` or `quality:low-lossy-quality`. Use `devimg review` for manifest-only visual checks of upscaled outputs and output-size surprises.
@@ -318,7 +319,7 @@ Exit codes are stable for CI:
 
 ## AI Agent Workflow
 
-Codex, Claude Code, and similar tools should run `devimg doctor --config devimg.toml` before editing image sources, config, manifests, generated variants, or app helper files. After changes, run the local loop above and commit the generated variants, manifest, report, and checked-in helper files together.
+Codex, Claude Code, and similar tools should run `devimg doctor` before editing image sources, config, manifests, generated variants, or app helper files. After changes, run the local loop above and commit the generated variants, manifest, report, and checked-in helper files together.
 
 Do not edit generated files by hand. If agent instruction files such as `AGENTS.md`, `CLAUDE.md`, or `.claude/skills/**` already exist, do not overwrite them; add project-specific guidance only through an explicit reviewed change.
 
@@ -347,7 +348,6 @@ jobs:
       - uses: actions/checkout@v6
       - uses: cleissonom/devimg/action@v0.1.14
         with:
-          config: devimg.toml
           mode: check
           export-output: lib/devimg.generated.ts
           export-format: typescript

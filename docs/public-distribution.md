@@ -35,7 +35,6 @@ Consumer workflows should pin a release tag:
 ```yaml
 - uses: cleissonom/devimg/action@v0.1.14
   with:
-    config: devimg.toml
     mode: check
 ```
 

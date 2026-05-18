@@ -13,6 +13,8 @@ use devimg_core::{
     ManifestReviewOptions, ManifestTypescriptOptions, OptimizeOptions,
 };
 
+const DEFAULT_CONFIG_PATH: &str = "devimg.toml";
+
 fn main() {
     let code = match run(std::env::args_os()) {
         Ok(()) => 0,
@@ -103,7 +105,7 @@ enum Command {
 
 #[derive(Debug, Args)]
 struct InitArgs {
-    #[arg(long, default_value = "devimg.toml")]
+    #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
     #[arg(long, value_enum)]
     profile: Option<InitProfile>,
@@ -122,7 +124,7 @@ enum InitProfile {
 
 #[derive(Debug, Args)]
 struct OptimizeArgs {
-    #[arg(long, default_value = "devimg.toml")]
+    #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
     #[arg(long)]
     dry_run: bool,
@@ -132,7 +134,7 @@ struct OptimizeArgs {
 
 #[derive(Debug, Args)]
 struct CheckArgs {
-    #[arg(long, default_value = "devimg.toml")]
+    #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
     #[arg(long)]
     fail_on_warning: bool,
@@ -142,7 +144,7 @@ struct CheckArgs {
 
 #[derive(Debug, Args)]
 struct DoctorArgs {
-    #[arg(long, default_value = "devimg.toml")]
+    #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
     #[arg(long)]
     json: bool,
@@ -246,7 +248,7 @@ struct AgentInitArgs {
     target: AgentTarget,
     #[arg(long, default_value = ".")]
     output_dir: PathBuf,
-    #[arg(long, default_value = "devimg.toml")]
+    #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
     #[arg(long)]
     stdout: bool,
@@ -712,18 +714,30 @@ fn path_to_slash(path: &Path) -> String {
 }
 
 fn init_command(config_path: &Path) -> String {
-    format!("devimg init --config {}", shell_arg_path(config_path))
+    format!("devimg init{}", config_option(config_path))
 }
 
 fn optimize_command(config_path: &Path) -> String {
     format!(
-        "devimg optimize --config {} --allow-overwrite",
-        shell_arg_path(config_path)
+        "devimg optimize{} --allow-overwrite",
+        config_option(config_path)
     )
 }
 
 fn doctor_command(config_path: &Path) -> String {
-    format!("devimg doctor --config {}", shell_arg_path(config_path))
+    format!("devimg doctor{}", config_option(config_path))
+}
+
+fn check_command(config_path: &Path) -> String {
+    format!("devimg check{}", config_option(config_path))
+}
+
+fn config_option(config_path: &Path) -> String {
+    if config_path == Path::new(DEFAULT_CONFIG_PATH) {
+        String::new()
+    } else {
+        format!(" --config {}", shell_arg_path(config_path))
+    }
 }
 
 fn shell_arg_path(path: &Path) -> String {
@@ -756,19 +770,28 @@ struct AgentInstructionFile {
     contents: String,
 }
 
+struct AgentInstructionCommands {
+    config_path: String,
+    config_note: String,
+    doctor: String,
+    optimize: String,
+    check: String,
+    doctor_export: String,
+}
+
 fn agent_instruction_files(args: &AgentInitArgs) -> Vec<AgentInstructionFile> {
-    let config = shell_arg_path(&args.config);
+    let commands = agent_instruction_commands(&args.config);
     let codex = AgentInstructionFile {
         relative_path: PathBuf::from("AGENTS.md"),
-        contents: codex_agent_instructions(&config),
+        contents: codex_agent_instructions(&commands),
     };
     let claude_memory = AgentInstructionFile {
         relative_path: PathBuf::from("CLAUDE.md"),
-        contents: claude_agent_instructions(&config),
+        contents: claude_agent_instructions(&commands),
     };
     let claude_command = AgentInstructionFile {
         relative_path: PathBuf::from(".claude/commands/devimg-doctor.md"),
-        contents: claude_devimg_command(&config),
+        contents: claude_devimg_command(&commands),
     };
 
     match args.target {
@@ -778,19 +801,54 @@ fn agent_instruction_files(args: &AgentInitArgs) -> Vec<AgentInstructionFile> {
     }
 }
 
-fn codex_agent_instructions(config: &str) -> String {
+fn agent_instruction_commands(config_path: &Path) -> AgentInstructionCommands {
+    let config_path_label = shell_arg_path(config_path);
+    let config_note = if config_path == Path::new(DEFAULT_CONFIG_PATH) {
+        "DevImg uses `devimg.toml` by default; pass `--config <path>` only when this project uses a custom config file.".to_string()
+    } else {
+        format!(
+            "This project uses `{config_path_label}` as its DevImg config; keep passing `--config {config_path_label}`."
+        )
+    };
+    let doctor = doctor_command(config_path);
+    let optimize = optimize_command(config_path);
+    let check = check_command(config_path);
+    let doctor_export = format!(
+        "{} --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /",
+        doctor
+    );
+
+    AgentInstructionCommands {
+        config_path: config_path_label,
+        config_note,
+        doctor,
+        optimize,
+        check,
+        doctor_export,
+    }
+}
+
+fn codex_agent_instructions(commands: &AgentInstructionCommands) -> String {
+    let config_path = &commands.config_path;
+    let config_note = &commands.config_note;
+    let doctor = &commands.doctor;
+    let optimize = &commands.optimize;
+    let check = &commands.check;
+    let doctor_export = &commands.doctor_export;
+
     format!(
         r#"# DevImg Agent Instructions
 
 ## Image Pipeline Workflow
 
-- Run `devimg doctor --config {config}` before editing source images, `devimg.toml`, generated variants, manifests, reports, or app image helper files.
-- After image source or config changes, run `devimg optimize --config {config} --allow-overwrite`.
+- {config_note}
+- Run `{doctor}` before editing source images, DevImg config, generated variants, manifests, reports, or app image helper files.
+- After image source or config changes, run `{optimize}`.
 - If the project checks in a manifest helper, regenerate it with `devimg manifest export`.
 - If that helper was generated with `--typescript-helpers`, use the same flag for regeneration and drift checks.
 - When crop or quality needs visual review, run `devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html`.
-- Run `devimg check --config {config}` before finishing.
-- Run `devimg doctor --config {config}` again to confirm the project is healthy.
+- Run `{check}` before finishing.
+- Run `{doctor}` again to confirm the project is healthy.
 - Treat warning output such as `quality:cover-crop` or `quality:low-lossy-quality` as a review signal; do not silently auto-tune config without user approval.
 - Use `[[warnings.acknowledge]]` only after visual review, scoped to the exact source/preset or output, with a human-readable reason.
 - If this repository has `docs/agent-contract.md`, follow it as the DevImg file ownership policy.
@@ -801,31 +859,39 @@ fn codex_agent_instructions(config: &str) -> String {
 Recommended loop:
 
 ```bash
-devimg doctor --config {config}
-devimg optimize --config {config} --allow-overwrite
+{doctor}
+{optimize}
 devimg manifest export --manifest public/images/devimg-manifest.json --strip-prefix public --url-prefix / --format typescript --output lib/devimg.generated.ts
 devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html
-devimg check --config {config}
-devimg doctor --config {config} --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
+{check}
+{doctor_export}
 ```
 
-If the project uses different manifest or helper paths, inspect `{config}` and adjust the manifest export command before running it. Keep `--typescript-helpers` only when the checked-in TypeScript helper uses the generated lookup functions.
+If the project uses different manifest or helper paths, inspect `{config_path}` and adjust the manifest export command before running it. Keep `--typescript-helpers` only when the checked-in TypeScript helper uses the generated lookup functions.
 "#
     )
 }
 
-fn claude_agent_instructions(config: &str) -> String {
+fn claude_agent_instructions(commands: &AgentInstructionCommands) -> String {
+    let config_path = &commands.config_path;
+    let config_note = &commands.config_note;
+    let doctor = &commands.doctor;
+    let optimize = &commands.optimize;
+    let check = &commands.check;
+    let doctor_export = &commands.doctor_export;
+
     format!(
         r#"# DevImg Agent Instructions
 
 Use these instructions when working with generated web image assets.
 
-- Start with `devimg doctor --config {config}` before changing source images, `devimg.toml`, generated variants, manifests, reports, or app image helper files.
-- Regenerate outputs with `devimg optimize --config {config} --allow-overwrite` after image source or config changes.
+- {config_note}
+- Start with `{doctor}` before changing source images, DevImg config, generated variants, manifests, reports, or app image helper files.
+- Regenerate outputs with `{optimize}` after image source or config changes.
 - Regenerate checked-in manifest helpers with `devimg manifest export` when the project uses them.
 - Include `--typescript-helpers` when the checked-in TypeScript helper uses generated lookup functions.
 - Run `devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html` when crop or quality needs visual review.
-- Validate with `devimg check --config {config}` and then run `devimg doctor --config {config}` again.
+- Validate with `{check}` and then run `{doctor}` again.
 - Treat warning output such as `quality:cover-crop` or `quality:low-lossy-quality` as a review signal; do not silently auto-tune config without user approval.
 - Use `[[warnings.acknowledge]]` only after visual review, scoped to the exact source/preset or output, with a human-readable reason.
 - If this repository has `docs/agent-contract.md`, follow it as the DevImg file ownership policy.
@@ -836,36 +902,40 @@ Use these instructions when working with generated web image assets.
 Recommended loop:
 
 ```bash
-devimg doctor --config {config}
-devimg optimize --config {config} --allow-overwrite
+{doctor}
+{optimize}
 devimg manifest export --manifest public/images/devimg-manifest.json --strip-prefix public --url-prefix / --format typescript --output lib/devimg.generated.ts
 devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html
-devimg check --config {config}
-devimg doctor --config {config} --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
+{check}
+{doctor_export}
 ```
 
-If this project uses a different manifest path or does not check in a generated helper, inspect `{config}` and adjust or skip the manifest export step. Keep `--typescript-helpers` only when the checked-in TypeScript helper uses the generated lookup functions.
+If this project uses a different manifest path or does not check in a generated helper, inspect `{config_path}` and adjust or skip the manifest export step. Keep `--typescript-helpers` only when the checked-in TypeScript helper uses the generated lookup functions.
 "#
     )
 }
 
-fn claude_devimg_command(config: &str) -> String {
+fn claude_devimg_command(commands: &AgentInstructionCommands) -> String {
+    let doctor = &commands.doctor;
+    let optimize = &commands.optimize;
+    let check = &commands.check;
+
     format!(
         r#"---
 description: Diagnose and update DevImg generated image assets
 argument-hint: [config path]
 ---
 
-Run the DevImg image pipeline workflow. Use `$ARGUMENTS` as the config path when provided; otherwise use `{config}`.
+Run the DevImg image pipeline workflow. Use `$ARGUMENTS` as a custom config path when provided; otherwise use DevImg's default `devimg.toml`.
 
 Steps:
 
-1. Run `devimg doctor --config <config>`.
-2. If source images or config changed, run `devimg optimize --config <config> --allow-overwrite`.
+1. Run `{doctor}`, or `devimg doctor --config <config>` when `$ARGUMENTS` supplies a custom path.
+2. If source images or config changed, run `{optimize}`, or `devimg optimize --config <config> --allow-overwrite` for a custom path.
 3. If the project checks in a manifest helper, run `devimg manifest export` with the project manifest/helper paths, including `--typescript-helpers` only when that helper uses generated lookup functions.
 4. If crop or quality needs visual review, run `devimg review --manifest <manifest> --output .devimg/review.html`.
-5. Run `devimg check --config <config>`.
-6. Run `devimg doctor --config <config>` again.
+5. Run `{check}`, or `devimg check --config <config>` for a custom path.
+6. Run `{doctor}` again, or `devimg doctor --config <config>` again for a custom path.
 
 Rules:
 

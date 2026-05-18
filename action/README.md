@@ -12,7 +12,6 @@ jobs:
       - uses: actions/checkout@v6
       - uses: cleissonom/devimg/action@v0.1.14
         with:
-          config: devimg.toml
           mode: check
           export-output: lib/devimg.generated.ts
           export-format: typescript
@@ -30,7 +29,7 @@ Pin the release tag from public repositories with `cleissonom/devimg/action@vX.Y
 
 ## Inputs
 
-- `config`: config path. Default: `devimg.toml`.
+- `config`: config path. Default: `devimg.toml`; set this only for custom filenames or locations.
 - `mode`: `check` or `optimize`. Default: `check`.
 - `working-directory`: command working directory. Default: `.`.
 - `fail-on-warning`: pass `--fail-on-warning` in check mode. Acknowledged warnings remain visible but do not fail strict checks.

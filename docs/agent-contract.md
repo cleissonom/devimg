@@ -33,15 +33,15 @@ Regenerate those files with DevImg commands instead.
 Run this loop when image sources, config, generated variants, manifests, reports, or helper files may change:
 
 ```bash
-devimg doctor --config devimg.toml
-devimg optimize --config devimg.toml --allow-overwrite
+devimg doctor
+devimg optimize --allow-overwrite
 devimg manifest export --manifest public/images/devimg-manifest.json --strip-prefix public --url-prefix / --format typescript --output lib/devimg.generated.ts
 devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html
-devimg check --config devimg.toml
-devimg doctor --config devimg.toml --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
+devimg check
+devimg doctor --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 ```
 
-Adjust manifest/helper paths to match the project config. Skip `manifest export` only when the project does not check in a helper file.
+`devimg.toml` is the default config path. Add `--config <path>` only when the project keeps the DevImg config somewhere else. Adjust manifest/helper paths to match the project config. Skip `manifest export` only when the project does not check in a helper file.
 
 If a TypeScript helper file was generated with `--typescript-helpers`, use that same flag for regeneration and drift checks. Do not remove helper functions by hand; regenerate the file from the manifest.
 

@@ -66,11 +66,7 @@ pub fn render_manifest_review(manifest: &Manifest, options: &ManifestReviewOptio
     push_key_value(&mut out, "Generated at", &manifest.generated_at);
     push_key_value(&mut out, "Config path", &manifest.config_path);
     push_key_value(&mut out, "Config hash", &manifest.config_hash);
-    push_key_value(
-        &mut out,
-        "Budget status",
-        "not evaluated; run devimg check --config <path>",
-    );
+    push_key_value(&mut out, "Budget status", "not evaluated; run devimg check");
     out.push_str("      </div>\n");
     out.push_str("    </section>\n");
 
