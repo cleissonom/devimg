@@ -6,6 +6,10 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 No unreleased changes.
 
+## 0.1.15
+
+- Treated `devimg.toml` as the documented default config path in CLI hints, doctor next-step output, generated agent instructions, and public docs, while preserving `--config <path>` for custom config files.
+
 ## 0.1.14
 
 - Prepared public distribution metadata for crates.io.

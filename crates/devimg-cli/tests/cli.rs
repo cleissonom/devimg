@@ -12,7 +12,7 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["review", "--help"]), 0);
     let version = run(["--version"]);
     assert_status(&version, 0);
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.14"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.15"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -58,6 +58,24 @@ fn optimize_and_check_success() {
     assert!(project.join("devimg-report.md").exists());
 
     assert_code(run(["check", "--config", config.as_str()]), 0);
+    cleanup(&project);
+}
+
+#[test]
+fn default_config_commands_work_from_project_root() {
+    let project = fixture_project("default_config", "sample.png");
+
+    assert_code(run_in_dir(&project, ["optimize"]), 0);
+    assert!(project
+        .join("public/images/generated/sample.project-card.64.webp")
+        .exists());
+    assert_code(run_in_dir(&project, ["check"]), 0);
+
+    let doctor = run_in_dir(&project, ["doctor"]);
+    assert_status(&doctor, 0);
+    let stdout = String::from_utf8_lossy(&doctor.stdout);
+    assert!(stdout.contains("Next: devimg check"));
+    assert!(!stdout.contains("Next: devimg check --config devimg.toml"));
     cleanup(&project);
 }
 
@@ -1410,10 +1428,12 @@ fn agent_init_creates_codex_claude_and_both_targets_safely() {
     let agents = codex_project.join("AGENTS.md");
     assert!(agents.exists());
     let agents_text = fs::read_to_string(&agents).expect("AGENTS.md reads");
-    assert!(agents_text.contains("devimg doctor --config devimg.toml"));
-    assert!(agents_text.contains("devimg optimize --config devimg.toml --allow-overwrite"));
+    assert!(agents_text.contains("DevImg uses `devimg.toml` by default"));
+    assert!(agents_text.contains("devimg doctor"));
+    assert!(agents_text.contains("devimg optimize --allow-overwrite"));
     assert!(agents_text.contains("devimg manifest export"));
-    assert!(agents_text.contains("devimg check --config devimg.toml"));
+    assert!(agents_text.contains("devimg check"));
+    assert!(!agents_text.contains("--config devimg.toml"));
     assert!(agents_text.contains("docs/agent-contract.md"));
     assert!(agents_text.contains("Do not edit generated"));
     cleanup(&codex_project);
@@ -1535,6 +1555,18 @@ where
     S: AsRef<OsStr>,
 {
     Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args(args)
+        .output()
+        .expect("devimg runs")
+}
+
+fn run_in_dir<I, S>(dir: &Path, args: I) -> Output
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .current_dir(dir)
         .args(args)
         .output()
         .expect("devimg runs")

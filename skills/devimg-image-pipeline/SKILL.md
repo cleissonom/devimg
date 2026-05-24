@@ -7,13 +7,13 @@ description: Run DevImg image pipeline workflows safely in frontend repositories
 
 ## Workflow
 
-1. Locate the config, usually `devimg.toml`.
-2. Run `devimg doctor --config <config>` before editing image sources, config, generated variants, manifests, reports, or app helper files.
-3. If image sources or config changed, run `devimg optimize --config <config> --allow-overwrite`.
+1. Locate the config. DevImg uses `devimg.toml` by default.
+2. Run `devimg doctor` before editing image sources, config, generated variants, manifests, reports, or app helper files. Add `--config <path>` only when the project uses a custom config path.
+3. If image sources or config changed, run `devimg optimize --allow-overwrite`.
 4. If the project checks in a manifest helper, regenerate it with `devimg manifest export`.
 5. When crop, composition, or quality needs visual inspection, run `devimg review --manifest <manifest> --output .devimg/review.html` or `--stdout`.
-6. Run `devimg check --config <config>`.
-7. Run `devimg doctor --config <config>` again before finishing.
+6. Run `devimg check`.
+7. Run `devimg doctor` again before finishing.
 
 ## Rules
 
@@ -35,12 +35,12 @@ description: Run DevImg image pipeline workflows safely in frontend repositories
 ## Common Commands
 
 ```bash
-devimg doctor --config devimg.toml
-devimg optimize --config devimg.toml --allow-overwrite
+devimg doctor
+devimg optimize --allow-overwrite
 devimg manifest export --manifest public/images/devimg-manifest.json --strip-prefix public --url-prefix / --format typescript --output lib/devimg.generated.ts
 devimg review --manifest public/images/devimg-manifest.json --output .devimg/review.html
-devimg check --config devimg.toml
-devimg doctor --config devimg.toml --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
+devimg check
+devimg doctor --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /
 ```
 
 Use `devimg agent init --target codex|claude|both` to create safe project instructions when missing. If files already exist, prefer printing or merging a reviewed snippet instead of replacing them.

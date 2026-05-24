@@ -16,9 +16,11 @@ Then initialize a project:
 
 ```bash
 devimg init --stdout > devimg.toml
-devimg doctor --config devimg.toml
-devimg optimize --config devimg.toml
-devimg check --config devimg.toml
+devimg doctor
+devimg optimize
+devimg check
 ```
+
+`devimg.toml` is the default config path. Pass `--config <path>` only for custom filenames or locations.
 
 Repository: <https://github.com/cleissonom/devimg>

@@ -10,9 +10,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.14
+      - uses: cleissonom/devimg/action@v0.1.15
         with:
-          config: devimg.toml
           mode: check
           export-output: lib/devimg.generated.ts
           export-format: typescript
@@ -30,12 +29,12 @@ Pin the release tag from public repositories with `cleissonom/devimg/action@vX.Y
 
 ## Inputs
 
-- `config`: config path. Default: `devimg.toml`.
+- `config`: config path. Default: `devimg.toml`; set this only for custom filenames or locations.
 - `mode`: `check` or `optimize`. Default: `check`.
 - `working-directory`: command working directory. Default: `.`.
 - `fail-on-warning`: pass `--fail-on-warning` in check mode. Acknowledged warnings remain visible but do not fail strict checks.
 - `binary-path`: use a prebuilt local binary, useful for smoke tests.
-- `version`: release version to download when no binary is found. Default: `v0.1.14`.
+- `version`: release version to download when no binary is found. Default: `v0.1.15`.
 - `report-path`: configured report path appended to the step summary; this does not override `devimg.toml`.
 - `manifest-path`: expected manifest path exposed as an output; this does not override `devimg.toml`.
 - `export-output`: optional checked-in manifest export/helper file to verify in check mode.

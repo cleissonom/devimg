@@ -17,8 +17,8 @@ body:
       label: Reproduction
       description: Include commands, config snippets, fixture paths, and relevant output.
       placeholder: |
-        devimg doctor --config devimg.toml
-        devimg check --config devimg.toml
+        devimg doctor
+        devimg check
     validations:
       required: true
   - type: input
