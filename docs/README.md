@@ -19,3 +19,7 @@ This directory contains public DevImg documentation for users, contributors, and
 ## Future Work
 
 - `roadmap-v0.2-ai.md`: optional AI-assisted workflow plan. These features are not required for the deterministic pipeline.
+
+## Deferred Dependency Work
+
+- `compatibility.md`: includes the deferred `image >=0.25` migration note and MSRV decision checklist.
