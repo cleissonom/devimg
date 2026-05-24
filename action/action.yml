@@ -28,7 +28,7 @@ inputs:
   version:
     description: Release version to download when no binary is available
     required: false
-    default: v0.1.14
+    default: v0.1.15
   report-path:
     description: Markdown report path to append to the job summary
     required: false

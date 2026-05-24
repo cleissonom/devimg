@@ -12,7 +12,7 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["review", "--help"]), 0);
     let version = run(["--version"]);
     assert_status(&version, 0);
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.14"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.15"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
