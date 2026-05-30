@@ -99,8 +99,14 @@ jobs:
       - name: Install Rust stable
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
 
+      - name: Install Rust MSRV
+        run: rustup toolchain install 1.88.0 --profile minimal
+
       - name: Check formatting
         run: cargo +stable fmt --all -- --check
+
+      - name: Check MSRV
+        run: cargo +1.88.0 check --workspace
 
       - name: Run clippy
         run: cargo +stable clippy --all-targets --all-features -- -D warnings

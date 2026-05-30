@@ -177,20 +177,17 @@ pub fn doctor(config: &Config, options: DoctorOptions) -> Result<DoctorReport> {
     if manifest_path.exists() {
         checks.push(pass_check(
             "manifest",
-            format!("found {}", manifest_project_path),
+            format!("found {manifest_project_path}"),
         ));
     } else {
         checks.push(fail_check(
             "manifest",
-            format!("missing {}", manifest_project_path),
+            format!("missing {manifest_project_path}"),
         ));
     }
 
     if report_path.exists() {
-        checks.push(pass_check(
-            "report",
-            format!("found {}", report_project_path),
-        ));
+        checks.push(pass_check("report", format!("found {report_project_path}")));
     } else {
         warnings.push(diagnostic(
             "missing_report",

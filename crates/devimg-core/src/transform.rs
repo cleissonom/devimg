@@ -2,7 +2,11 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use image::{imageops::FilterType, DynamicImage};
+use image::{
+    codecs::{jpeg::JpegEncoder, png::PngEncoder},
+    imageops::FilterType,
+    DynamicImage, ExtendedColorType, ImageEncoder,
+};
 use ravif::{Encoder as AvifEncoder, Img as AvifImage, RGBA8};
 
 use crate::config::{CropPosition, FitMode, FormatKind};
@@ -174,12 +178,28 @@ fn encode_image(
 ) -> std::result::Result<Vec<u8>, String> {
     let mut cursor = Cursor::new(Vec::new());
     match format {
-        FormatKind::Jpeg => DynamicImage::ImageRgb8(image.to_rgb8())
-            .write_to(&mut cursor, format.output_format(quality))
-            .map_err(|source| source.to_string())?,
-        FormatKind::Png => image
-            .write_to(&mut cursor, format.output_format(quality))
-            .map_err(|source| source.to_string())?,
+        FormatKind::Jpeg => {
+            let rgb = image.to_rgb8();
+            JpegEncoder::new_with_quality(&mut cursor, quality)
+                .write_image(
+                    rgb.as_raw(),
+                    rgb.width(),
+                    rgb.height(),
+                    ExtendedColorType::Rgb8,
+                )
+                .map_err(|source| source.to_string())?;
+        }
+        FormatKind::Png => {
+            let rgba = image.to_rgba8();
+            PngEncoder::new(&mut cursor)
+                .write_image(
+                    rgba.as_raw(),
+                    rgba.width(),
+                    rgba.height(),
+                    ExtendedColorType::Rgba8,
+                )
+                .map_err(|source| source.to_string())?;
+        }
         FormatKind::Webp => return encode_webp(image, quality),
         FormatKind::Avif => return encode_avif(image, quality),
     }

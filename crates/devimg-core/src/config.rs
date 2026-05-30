@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use image::{ImageFormat, ImageOutputFormat};
+use image::ImageFormat;
 use serde::{Deserialize, Deserializer};
 
 use crate::hash::hash_bytes;
@@ -155,15 +155,6 @@ impl FormatKind {
             Self::Jpeg => ImageFormat::Jpeg,
             Self::Webp => ImageFormat::WebP,
             Self::Avif => ImageFormat::Avif,
-        }
-    }
-
-    pub fn output_format(self, quality: u8) -> ImageOutputFormat {
-        match self {
-            Self::Png => ImageOutputFormat::Png,
-            Self::Jpeg => ImageOutputFormat::Jpeg(quality),
-            Self::Webp => ImageOutputFormat::WebP,
-            Self::Avif => unreachable!("AVIF output uses the ravif encoder"),
         }
     }
 

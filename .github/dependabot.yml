@@ -10,10 +10,6 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
-    ignore:
-      - dependency-name: image
-        versions:
-          - ">=0.25.0"
     groups:
       rust-dependencies:
         patterns:

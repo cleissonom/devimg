@@ -4,7 +4,7 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 ## Unreleased
 
-No unreleased changes.
+- Migrated the `image` dependency to `0.25.10`, raised the source-build MSRV to Rust 1.88, and replaced `ImageOutputFormat` usage with current JPEG/PNG encoder APIs.
 
 ## 0.1.15
 
