@@ -13,7 +13,7 @@ DevImg sits above image engines, framework image components, and hosted transfor
 - Hosted image services are powerful for on-the-fly transformations; DevImg stays local-first and CI-first with no required remote storage.
 - Compression tools are useful for one-off optimization; DevImg manages the repeatable source-to-variant workflow.
 
-Detailed docs live in `docs/`: configuration, GitHub Action usage, release/distribution, architecture, compatibility, AI-agent workflow, and the public v0.2 AI roadmap.
+Detailed docs live in `docs/`: configuration, GitHub Action usage, release/distribution, architecture, compatibility, AI-agent workflow, and the current roadmap.
 
 ## Quickstart
 

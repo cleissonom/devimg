@@ -4,6 +4,8 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 ## Unreleased
 
+- Replaced the completed v0.2 AI roadmap and future-note file with one active roadmap for `0.2.8`, `0.2.9`, and `0.2.10`.
+
 ## 0.2.7
 
 - Polished CLI help text with command and flag descriptions across the DevImg command surface.
