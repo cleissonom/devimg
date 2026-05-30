@@ -4,7 +4,7 @@ DevImg is a Rust CLI, core library, and GitHub Action for deterministic frontend
 
 ## Local Setup
 
-Use Rust `1.85` or newer.
+Use Rust `1.88` or newer.
 
 ```bash
 cargo fmt --all -- --check
@@ -27,6 +27,7 @@ cargo run -p devimg -- optimize --config examples/dogfood/devimg.toml --allow-ov
 cargo run -p devimg -- check --config examples/dogfood/devimg.toml
 cargo run -p devimg -- manifest export --manifest examples/dogfood/public/images/devimg-manifest.json --format typescript --strip-prefix public --url-prefix / --typescript-helpers --output /tmp/devimg-dogfood.generated.ts
 cargo run -p devimg -- review --manifest examples/dogfood/public/images/devimg-manifest.json --output examples/dogfood/.devimg/review.html --force
+cargo run -p devimg -- draft --config examples/dogfood/devimg.toml --draft-type project-page-copy --dry-run --review-html examples/dogfood/.devimg/review.html --output /tmp/devimg-dogfood-project-page-copy.md --force
 ```
 
 Before finishing a change, run:

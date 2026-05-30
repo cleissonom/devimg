@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -108,6 +110,10 @@ pub trait AiReviewProviderClient {
 
 pub trait AiAltProviderClient {
     fn alt(&self, request: &AiAltRequest) -> Result<AiAltProviderPayload>;
+}
+
+pub trait AiDraftProviderClient {
+    fn draft(&self, request: &AiDraftRequest) -> Result<AiDraftProviderPayload>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -407,6 +413,154 @@ pub struct AiAltReportSummary {
     pub draft_count: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AiDraftType {
+    ReleaseNotes,
+    ReadmeSnippet,
+    ProjectPageCopy,
+    BlogOutline,
+    SocialPostOutline,
+}
+
+impl AiDraftType {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ReleaseNotes => "release-notes",
+            Self::ReadmeSnippet => "readme-snippet",
+            Self::ProjectPageCopy => "project-page-copy",
+            Self::BlogOutline => "blog-outline",
+            Self::SocialPostOutline => "social-post-outline",
+        }
+    }
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::ReleaseNotes => "Release Notes",
+            Self::ReadmeSnippet => "README Snippet",
+            Self::ProjectPageCopy => "Project Page Copy",
+            Self::BlogOutline => "Blog Outline",
+            Self::SocialPostOutline => "Social Post Outline",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiDraftOptions {
+    pub draft_type: AiDraftType,
+    pub provider: Option<AiProvider>,
+    pub model: Option<String>,
+    pub command: String,
+    pub config_path: PathBuf,
+    pub project_root: PathBuf,
+    pub output_path: PathBuf,
+    pub dry_run: bool,
+    pub compare_json_path: Option<PathBuf>,
+    pub ai_review_json_path: Option<PathBuf>,
+    pub review_html_path: Option<PathBuf>,
+    pub changelog_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiDraftRequest {
+    pub schema_version: u32,
+    pub draft_type: AiDraftType,
+    pub provider: Option<AiProvider>,
+    pub model: Option<String>,
+    pub command: String,
+    pub config_path: String,
+    pub project_root: String,
+    pub mode: String,
+    pub dry_run: bool,
+    pub output_path: String,
+    pub manifest_summary: AiDraftManifestSummary,
+    pub report_summary: AiDraftArtifactSummary,
+    pub changelog_summary: Option<AiDraftArtifactSummary>,
+    pub optional_artifacts: Vec<AiDraftArtifactSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiDraftManifestSummary {
+    pub path: String,
+    pub readable: bool,
+    pub read_error: Option<String>,
+    pub config_hash: Option<String>,
+    pub source_count: usize,
+    pub output_count: usize,
+    pub source_bytes: u64,
+    pub output_bytes: u64,
+    pub outputs: Vec<AiDraftManifestOutputSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiDraftManifestOutputSummary {
+    pub source_path: String,
+    pub output_path: String,
+    pub preset: String,
+    pub fit: String,
+    pub width: u32,
+    pub height: u32,
+    pub format: String,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiDraftArtifactSummary {
+    pub label: String,
+    pub path: String,
+    pub readable: bool,
+    pub read_error: Option<String>,
+    pub bytes: u64,
+    pub line_count: usize,
+    pub excerpt: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct AiDraftProviderPayload {
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub sections: Vec<AiDraftSection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct AiDraftSection {
+    pub heading: String,
+    pub body: String,
+    #[serde(default)]
+    pub bullets: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiDraftReport {
+    pub schema_version: u32,
+    pub draft_type: AiDraftType,
+    pub provider: Option<AiProvider>,
+    pub model: Option<String>,
+    pub command: String,
+    pub config_path: String,
+    pub project_root: String,
+    pub mode: String,
+    pub dry_run: bool,
+    pub output_path: String,
+    pub provider_called: bool,
+    pub summary: AiDraftReportSummary,
+    pub manifest_summary: AiDraftManifestSummary,
+    pub report_summary: AiDraftArtifactSummary,
+    pub changelog_summary: Option<AiDraftArtifactSummary>,
+    pub optional_artifacts: Vec<AiDraftArtifactSummary>,
+    pub provider_summary: String,
+    pub sections: Vec<AiDraftSection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiDraftReportSummary {
+    pub source_count: usize,
+    pub output_count: usize,
+    pub optional_artifact_count: usize,
+    pub section_count: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MockAiReviewProviderClient {
     provider: AiProvider,
@@ -509,6 +663,61 @@ impl AiAltProviderClient for MockAiAltProviderClient {
                     warnings: vec!["needs-human-review".to_string()],
                 })
                 .collect(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MockAiDraftProviderClient {
+    provider: AiProvider,
+    fail: bool,
+}
+
+impl MockAiDraftProviderClient {
+    pub fn new(provider: AiProvider) -> Self {
+        Self {
+            provider,
+            fail: false,
+        }
+    }
+
+    pub fn failing(provider: AiProvider) -> Self {
+        Self {
+            provider,
+            fail: true,
+        }
+    }
+}
+
+impl AiDraftProviderClient for MockAiDraftProviderClient {
+    fn draft(&self, request: &AiDraftRequest) -> Result<AiDraftProviderPayload> {
+        if self.fail {
+            return Err(crate::DevimgError::config(
+                &request.config_path,
+                "mock AI draft provider failure",
+            ));
+        }
+
+        Ok(AiDraftProviderPayload {
+            summary: format!("mock {} draft", self.provider.label()),
+            sections: vec![
+                AiDraftSection {
+                    heading: request.draft_type.title().to_string(),
+                    body: "Mock provider draft for provider boundary tests.".to_string(),
+                    bullets: vec![
+                        format!("Draft type: {}", request.draft_type.label()),
+                        format!(
+                            "Outputs summarized: {}",
+                            request.manifest_summary.output_count
+                        ),
+                    ],
+                },
+                AiDraftSection {
+                    heading: "Review Notes".to_string(),
+                    body: "Review before publishing.".to_string(),
+                    bullets: vec!["needs-human-review".to_string()],
+                },
+            ],
         })
     }
 }
@@ -1039,6 +1248,516 @@ pub fn render_ai_alt_markdown(report: &AiAltReport) -> String {
     out
 }
 
+pub fn build_ai_draft_request(config: &Config, options: &AiDraftOptions) -> AiDraftRequest {
+    let manifest_path =
+        resolve_project_path_checked(config, &config.project.manifest, "manifest path")
+            .unwrap_or_else(|_| config.project.root.join(&config.project.manifest));
+    let report_path = resolve_project_path_checked(config, &config.project.report, "report path")
+        .unwrap_or_else(|_| config.project.root.join(&config.project.report));
+    let manifest_summary = summarize_draft_manifest(&manifest_path, &config.project.root);
+    let report_summary =
+        summarize_draft_artifact("devimg-report", &report_path, &config.project.root);
+    let changelog_summary = options
+        .changelog_path
+        .as_ref()
+        .map(|path| summarize_draft_artifact("changelog", path, &config.project.root));
+    let mut optional_artifacts = Vec::new();
+    if let Some(path) = &options.compare_json_path {
+        optional_artifacts.push(summarize_draft_artifact(
+            "compare-json",
+            path,
+            &config.project.root,
+        ));
+    }
+    if let Some(path) = &options.ai_review_json_path {
+        optional_artifacts.push(summarize_draft_artifact(
+            "ai-review-json",
+            path,
+            &config.project.root,
+        ));
+    }
+    if let Some(path) = &options.review_html_path {
+        optional_artifacts.push(summarize_draft_artifact(
+            "review-html",
+            path,
+            &config.project.root,
+        ));
+    }
+
+    AiDraftRequest {
+        schema_version: 1,
+        draft_type: options.draft_type,
+        provider: options.provider,
+        model: options.model.clone(),
+        command: options.command.clone(),
+        config_path: display_project_path(&options.project_root, &options.config_path),
+        project_root: display_path(&options.project_root),
+        mode: if options.provider.is_some() {
+            "provider-draft".to_string()
+        } else {
+            "metadata-only".to_string()
+        },
+        dry_run: options.dry_run,
+        output_path: display_project_path(&options.project_root, &options.output_path),
+        manifest_summary,
+        report_summary,
+        changelog_summary,
+        optional_artifacts,
+    }
+}
+
+pub fn build_ai_draft_report(
+    request: &AiDraftRequest,
+    payload: AiDraftProviderPayload,
+    provider_called: bool,
+) -> AiDraftReport {
+    let sections = normalize_ai_draft_sections(request, payload.sections);
+    AiDraftReport {
+        schema_version: request.schema_version,
+        draft_type: request.draft_type,
+        provider: request.provider,
+        model: request.model.clone(),
+        command: request.command.clone(),
+        config_path: request.config_path.clone(),
+        project_root: request.project_root.clone(),
+        mode: request.mode.clone(),
+        dry_run: request.dry_run,
+        output_path: request.output_path.clone(),
+        provider_called,
+        summary: AiDraftReportSummary {
+            source_count: request.manifest_summary.source_count,
+            output_count: request.manifest_summary.output_count,
+            optional_artifact_count: request.optional_artifacts.len(),
+            section_count: sections.len(),
+        },
+        manifest_summary: request.manifest_summary.clone(),
+        report_summary: request.report_summary.clone(),
+        changelog_summary: request.changelog_summary.clone(),
+        optional_artifacts: request.optional_artifacts.clone(),
+        provider_summary: sanitize_draft_text(&payload.summary, 800),
+        sections,
+    }
+}
+
+pub fn build_ai_draft_placeholder_report(request: &AiDraftRequest) -> AiDraftReport {
+    build_ai_draft_report(request, local_ai_draft_payload(request), false)
+}
+
+pub fn ai_draft_report_to_json(report: &AiDraftReport) -> String {
+    serde_json::to_string_pretty(report).expect("AI draft report serialization cannot fail") + "\n"
+}
+
+pub fn render_ai_draft_markdown(report: &AiDraftReport) -> String {
+    let mut out = String::new();
+    out.push_str("# Draft; review before publishing\n\n");
+    out.push_str("This Markdown is an advisory draft generated from DevImg metadata and optional local text artifacts. DevImg does not publish, commit, post, or edit application content.\n\n");
+
+    out.push_str("## Summary\n\n");
+    out.push_str(&format!("- Draft type: `{}`\n", report.draft_type.label()));
+    out.push_str(&format!("- Mode: `{}`\n", report.mode));
+    out.push_str(&format!("- Dry run: `{}`\n", report.dry_run));
+    out.push_str(&format!(
+        "- Provider called: `{}`\n",
+        report.provider_called
+    ));
+    if let Some(provider) = report.provider {
+        out.push_str(&format!("- Provider: `{}`\n", provider.label()));
+    }
+    if let Some(model) = &report.model {
+        out.push_str(&format!("- Model: `{model}`\n"));
+    }
+    out.push_str(&format!("- Config: `{}`\n", report.config_path));
+    out.push_str(&format!("- Project root: `{}`\n", report.project_root));
+    out.push_str(&format!("- Output: `{}`\n", report.output_path));
+    out.push_str(&format!(
+        "- Manifest outputs summarized: `{}`\n",
+        report.summary.output_count
+    ));
+    out.push_str(&format!(
+        "- Optional artifacts summarized: `{}`\n\n",
+        report.summary.optional_artifact_count
+    ));
+
+    out.push_str("## Source Context\n\n");
+    push_draft_manifest_context(&mut out, &report.manifest_summary);
+    push_draft_artifact_context(&mut out, "DevImg report", &report.report_summary);
+    if let Some(changelog) = &report.changelog_summary {
+        push_draft_artifact_context(&mut out, "Changelog", changelog);
+    }
+    for artifact in &report.optional_artifacts {
+        push_draft_artifact_context(&mut out, &artifact.label, artifact);
+    }
+    out.push('\n');
+
+    out.push_str("## Draft\n\n");
+    for section in &report.sections {
+        out.push_str(&format!("### {}\n\n", section.heading));
+        if !section.body.is_empty() {
+            out.push_str(&section.body);
+            out.push_str("\n\n");
+        }
+        for bullet in &section.bullets {
+            out.push_str(&format!("- {bullet}\n"));
+        }
+        out.push('\n');
+    }
+
+    out.push_str("## Review Checklist\n\n");
+    out.push_str("- Confirm the prose against the current product behavior and release state.\n");
+    out.push_str("- Remove placeholders, overclaims, and internal file paths before publishing.\n");
+    out.push_str("- Keep this artifact uncommitted unless a human intentionally promotes it.\n");
+    out
+}
+
+fn summarize_draft_manifest(path: &Path, project_root: &Path) -> AiDraftManifestSummary {
+    match read_manifest(path) {
+        Ok(manifest) => {
+            let mut outputs = manifest
+                .outputs
+                .iter()
+                .map(|output| AiDraftManifestOutputSummary {
+                    source_path: output.source_path.clone(),
+                    output_path: output.output_path.clone(),
+                    preset: output.preset.clone(),
+                    fit: output.fit.clone(),
+                    width: output.width,
+                    height: output.height,
+                    format: output.format.clone(),
+                    bytes: output.bytes,
+                })
+                .collect::<Vec<_>>();
+            outputs.sort_by(|left, right| {
+                left.source_path
+                    .cmp(&right.source_path)
+                    .then(left.preset.cmp(&right.preset))
+                    .then(left.width.cmp(&right.width))
+                    .then(left.height.cmp(&right.height))
+                    .then(left.format.cmp(&right.format))
+                    .then(left.output_path.cmp(&right.output_path))
+            });
+            AiDraftManifestSummary {
+                path: display_project_path(project_root, path),
+                readable: true,
+                read_error: None,
+                config_hash: Some(manifest.config_hash.clone()),
+                source_count: manifest_source_count(&manifest),
+                output_count: manifest.outputs.len(),
+                source_bytes: manifest.source_bytes_total(),
+                output_bytes: manifest.output_bytes_total(),
+                outputs,
+            }
+        }
+        Err(error) => AiDraftManifestSummary {
+            path: display_project_path(project_root, path),
+            readable: false,
+            read_error: Some(sanitize_draft_text(&error.to_string(), 240)),
+            config_hash: None,
+            source_count: 0,
+            output_count: 0,
+            source_bytes: 0,
+            output_bytes: 0,
+            outputs: Vec::new(),
+        },
+    }
+}
+
+fn summarize_draft_artifact(
+    label: &str,
+    path: &Path,
+    project_root: &Path,
+) -> AiDraftArtifactSummary {
+    match fs::read_to_string(path) {
+        Ok(raw) => AiDraftArtifactSummary {
+            label: label.to_string(),
+            path: display_project_path(project_root, path),
+            readable: true,
+            read_error: None,
+            bytes: raw.len() as u64,
+            line_count: raw.lines().count(),
+            excerpt: deterministic_draft_excerpt(&raw),
+        },
+        Err(source) => AiDraftArtifactSummary {
+            label: label.to_string(),
+            path: display_project_path(project_root, path),
+            readable: false,
+            read_error: Some(if source.kind() == ErrorKind::NotFound {
+                "file not found".to_string()
+            } else {
+                sanitize_draft_text(&source.to_string(), 240)
+            }),
+            bytes: 0,
+            line_count: 0,
+            excerpt: String::new(),
+        },
+    }
+}
+
+fn deterministic_draft_excerpt(raw: &str) -> String {
+    sanitize_draft_text(raw, 4000)
+}
+
+fn local_ai_draft_payload(request: &AiDraftRequest) -> AiDraftProviderPayload {
+    let context = draft_context_bullets(request);
+    let sections = match request.draft_type {
+        AiDraftType::ReleaseNotes => vec![
+            AiDraftSection {
+                heading: "Release Notes Draft".to_string(),
+                body: "Use this as a starting point for human-written release notes.".to_string(),
+                bullets: context.clone(),
+            },
+            AiDraftSection {
+                heading: "Validation Notes".to_string(),
+                body: "Before publishing, confirm that every item maps to committed code, tests, and release artifacts.".to_string(),
+                bullets: artifact_review_bullets(request),
+            },
+        ],
+        AiDraftType::ReadmeSnippet => vec![
+            AiDraftSection {
+                heading: "README Snippet Draft".to_string(),
+                body: "Add a concise, user-facing description of the DevImg image workflow and any generated artifacts that are relevant to this project.".to_string(),
+                bullets: context.clone(),
+            },
+            AiDraftSection {
+                heading: "Integration Notes".to_string(),
+                body: "Keep commands copyable, avoid provider-key assumptions, and explain which outputs are generated versus human-authored.".to_string(),
+                bullets: artifact_review_bullets(request),
+            },
+        ],
+        AiDraftType::ProjectPageCopy => vec![
+            AiDraftSection {
+                heading: "Project Page Copy Draft".to_string(),
+                body: "Position the project around deterministic image optimization, checked generated artifacts, and reviewable AI-assisted draft workflows.".to_string(),
+                bullets: context.clone(),
+            },
+            AiDraftSection {
+                heading: "Proof Points".to_string(),
+                body: "Use concrete pipeline facts from the manifest and report instead of broad marketing claims.".to_string(),
+                bullets: artifact_review_bullets(request),
+            },
+        ],
+        AiDraftType::BlogOutline => vec![
+            AiDraftSection {
+                heading: "Blog Outline Draft".to_string(),
+                body: "Frame the post around the problem, the DevImg workflow, verification, and what remains human-reviewed.".to_string(),
+                bullets: context.clone(),
+            },
+            AiDraftSection {
+                heading: "Sections To Fill".to_string(),
+                body: "Turn each bullet into a short section only after verifying the current repository state.".to_string(),
+                bullets: artifact_review_bullets(request),
+            },
+        ],
+        AiDraftType::SocialPostOutline => vec![
+            AiDraftSection {
+                heading: "Social Post Outline Draft".to_string(),
+                body: "Draft short post angles that point to concrete DevImg outcomes without implying automatic publication or unreviewed AI prose.".to_string(),
+                bullets: context.clone(),
+            },
+            AiDraftSection {
+                heading: "Post Variants".to_string(),
+                body: "Keep each variant concise and review all claims before posting.".to_string(),
+                bullets: artifact_review_bullets(request),
+            },
+        ],
+    };
+    AiDraftProviderPayload {
+        summary: if request.provider.is_some() && request.dry_run {
+            "Dry run only; no provider call was made.".to_string()
+        } else {
+            "Metadata-only draft; no provider call was made.".to_string()
+        },
+        sections,
+    }
+}
+
+fn draft_context_bullets(request: &AiDraftRequest) -> Vec<String> {
+    let mut bullets = Vec::new();
+    bullets.push(format!(
+        "Summarized `{}` source image(s) and `{}` generated output(s).",
+        request.manifest_summary.source_count, request.manifest_summary.output_count
+    ));
+    bullets.push(format!(
+        "DevImg report `{}` is `{}`.",
+        request.report_summary.path,
+        if request.report_summary.readable {
+            "readable"
+        } else {
+            "not readable"
+        }
+    ));
+    if let Some(changelog) = &request.changelog_summary {
+        bullets.push(format!(
+            "Changelog `{}` is `{}`.",
+            changelog.path,
+            if changelog.readable {
+                "readable"
+            } else {
+                "not readable"
+            }
+        ));
+    }
+    for artifact in &request.optional_artifacts {
+        bullets.push(format!(
+            "{} `{}` is `{}`.",
+            artifact.label,
+            artifact.path,
+            if artifact.readable {
+                "readable"
+            } else {
+                "not readable"
+            }
+        ));
+    }
+    bullets
+}
+
+fn artifact_review_bullets(request: &AiDraftRequest) -> Vec<String> {
+    let mut bullets = vec![
+        "Treat this draft as review input, not publishable final copy.".to_string(),
+        "Do not paste internal-only paths, command output, or generated file hashes into public prose without review.".to_string(),
+        format!(
+            "Run `{}` and inspect `{}` before using this draft.",
+            request.command, request.output_path
+        ),
+    ];
+    if request.provider.is_some() && request.dry_run {
+        bullets.push("Dry-run provider mode did not call any external AI service.".to_string());
+    }
+    bullets
+}
+
+fn normalize_ai_draft_sections(
+    request: &AiDraftRequest,
+    sections: Vec<AiDraftSection>,
+) -> Vec<AiDraftSection> {
+    let normalized = sections
+        .into_iter()
+        .filter_map(|section| {
+            let heading = sanitize_draft_text(&section.heading, 120);
+            let body = sanitize_draft_text(&section.body, 3000);
+            let bullets = section
+                .bullets
+                .into_iter()
+                .map(|bullet| sanitize_draft_text(&bullet, 500))
+                .filter(|bullet| !bullet.is_empty())
+                .collect::<Vec<_>>();
+            if heading.is_empty() && body.is_empty() && bullets.is_empty() {
+                None
+            } else {
+                Some(AiDraftSection {
+                    heading: if heading.is_empty() {
+                        request.draft_type.title().to_string()
+                    } else {
+                        heading
+                    },
+                    body,
+                    bullets,
+                })
+            }
+        })
+        .collect::<Vec<_>>();
+
+    if normalized.is_empty() {
+        local_ai_draft_payload(request).sections
+    } else {
+        normalized
+    }
+}
+
+fn sanitize_draft_text(raw: &str, max_bytes: usize) -> String {
+    let mut sanitized = String::new();
+    for (index, line) in raw
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .lines()
+        .enumerate()
+    {
+        if index > 0 {
+            sanitized.push('\n');
+        }
+        if is_sensitive_draft_line(line) {
+            sanitized.push_str("[redacted sensitive provider or image data]");
+        } else {
+            sanitized.push_str(line.trim_end());
+        }
+    }
+
+    truncate_to_bytes(sanitized.trim().to_string(), max_bytes)
+}
+
+fn is_sensitive_draft_line(line: &str) -> bool {
+    let lowered = line.to_ascii_lowercase();
+    lowered.contains("openai_api_key")
+        || lowered.contains("anthropic_api_key")
+        || lowered.contains("data:image/")
+        || lowered.contains(";base64,")
+}
+
+fn truncate_to_bytes(value: String, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value;
+    }
+
+    let mut end = 0;
+    for (index, ch) in value.char_indices() {
+        let next = index + ch.len_utf8();
+        if next > max_bytes {
+            break;
+        }
+        end = next;
+    }
+    let mut truncated = value[..end].trim_end().to_string();
+    truncated.push_str("\n[excerpt truncated]");
+    truncated
+}
+
+fn push_draft_manifest_context(out: &mut String, manifest: &AiDraftManifestSummary) {
+    out.push_str(&format!("- Manifest: `{}`\n", manifest.path));
+    out.push_str(&format!("- Manifest readable: `{}`\n", manifest.readable));
+    if let Some(error) = &manifest.read_error {
+        out.push_str(&format!("- Manifest read note: {error}\n"));
+    }
+    out.push_str(&format!("- Sources: `{}`\n", manifest.source_count));
+    out.push_str(&format!("- Outputs: `{}`\n", manifest.output_count));
+    out.push_str(&format!("- Source bytes: `{}`\n", manifest.source_bytes));
+    out.push_str(&format!("- Output bytes: `{}`\n", manifest.output_bytes));
+    if !manifest.outputs.is_empty() {
+        out.push_str("- Output presets:\n");
+        for output in manifest.outputs.iter().take(12) {
+            out.push_str(&format!(
+                "  - `{}` `{}` {}x{} `{}` (`{}` bytes)\n",
+                output.source_path,
+                output.preset,
+                output.width,
+                output.height,
+                output.format,
+                output.bytes
+            ));
+        }
+        if manifest.outputs.len() > 12 {
+            out.push_str("  - additional outputs omitted from Markdown context\n");
+        }
+    }
+}
+
+fn push_draft_artifact_context(out: &mut String, label: &str, artifact: &AiDraftArtifactSummary) {
+    out.push_str(&format!("- {label}: `{}`\n", artifact.path));
+    out.push_str(&format!("  - Readable: `{}`\n", artifact.readable));
+    if let Some(error) = &artifact.read_error {
+        out.push_str(&format!("  - Read note: {error}\n"));
+    }
+    if artifact.readable {
+        out.push_str(&format!("  - Bytes: `{}`\n", artifact.bytes));
+        out.push_str(&format!("  - Lines: `{}`\n", artifact.line_count));
+        if !artifact.excerpt.is_empty() {
+            out.push_str("  - Excerpt:\n\n");
+            out.push_str("```text\n");
+            out.push_str(&artifact.excerpt);
+            out.push_str("\n```\n");
+        }
+    }
+}
+
 pub fn ai_image_mime_type(format: &str) -> Option<&'static str> {
     match format.to_ascii_lowercase().as_str() {
         "png" => Some("image/png"),
@@ -1276,11 +1995,14 @@ mod tests {
     use super::{
         ai_alt_report_to_json, ai_consent_preview_to_json, ai_image_mime_type,
         ai_review_report_to_json, build_ai_alt_placeholder_report, build_ai_alt_report,
-        build_ai_alt_request, build_ai_review_dry_run_report, build_ai_review_report,
-        build_ai_review_request, render_ai_alt_markdown, render_ai_review_markdown, AiAltOptions,
-        AiAltProviderClient, AiConsentPreview, AiGeneratedOutput, AiProvider, AiProviderClient,
-        AiReviewOptions, AiReviewProviderClient, AiSelectedFile, MockAiAltProviderClient,
-        MockAiProviderClient, MockAiReviewProviderClient,
+        build_ai_alt_request, build_ai_draft_placeholder_report, build_ai_draft_report,
+        build_ai_review_dry_run_report, build_ai_review_report, build_ai_review_request,
+        render_ai_alt_markdown, render_ai_draft_markdown, render_ai_review_markdown, AiAltOptions,
+        AiAltProviderClient, AiConsentPreview, AiDraftArtifactSummary, AiDraftManifestSummary,
+        AiDraftProviderClient, AiDraftRequest, AiDraftSection, AiDraftType, AiGeneratedOutput,
+        AiProvider, AiProviderClient, AiReviewOptions, AiReviewProviderClient, AiSelectedFile,
+        MockAiAltProviderClient, MockAiDraftProviderClient, MockAiProviderClient,
+        MockAiReviewProviderClient,
     };
     use crate::manifest::{Manifest, ManifestOutput};
 
@@ -1606,6 +2328,83 @@ mod tests {
     }
 
     #[test]
+    fn ai_draft_placeholder_markdown_is_timestamp_free_and_review_marked() {
+        let request = sample_draft_request(AiDraftType::ProjectPageCopy, None, None, true);
+        let report = build_ai_draft_placeholder_report(&request);
+        let markdown = render_ai_draft_markdown(&report);
+        let json = serde_json::to_string_pretty(&report).expect("draft report serializes");
+
+        assert_eq!(report.draft_type, AiDraftType::ProjectPageCopy);
+        assert_eq!(report.mode, "metadata-only");
+        assert!(!report.provider_called);
+        assert_eq!(report.summary.source_count, 1);
+        assert_eq!(report.summary.output_count, 2);
+        assert!(markdown.starts_with("# Draft; review before publishing"));
+        assert!(markdown.contains("- Draft type: `project-page-copy`"));
+        assert!(markdown.contains("- Provider called: `false`"));
+        assert!(markdown.contains("## Draft"));
+        assert!(!markdown.contains("generated_at"));
+        assert!(!json.contains("timestamp"));
+    }
+
+    #[test]
+    fn mock_ai_draft_provider_returns_stable_payload_and_failure() {
+        let request = sample_draft_request(
+            AiDraftType::ReleaseNotes,
+            Some(AiProvider::Anthropic),
+            Some("mock-model".to_string()),
+            false,
+        );
+
+        let payload = MockAiDraftProviderClient::new(AiProvider::Anthropic)
+            .draft(&request)
+            .expect("mock provider succeeds");
+        let report = build_ai_draft_report(&request, payload, true);
+
+        assert!(report.provider_called);
+        assert_eq!(report.provider_summary, "mock anthropic draft");
+        assert_eq!(report.sections.len(), 2);
+        assert_eq!(report.sections[0].heading, "Release Notes");
+
+        let error = MockAiDraftProviderClient::failing(AiProvider::Openai)
+            .draft(&request)
+            .expect_err("mock provider fails");
+        assert!(error.to_string().contains("mock AI draft provider failure"));
+    }
+
+    #[test]
+    fn ai_draft_provider_payload_is_normalized_before_markdown() {
+        let request = sample_draft_request(
+            AiDraftType::BlogOutline,
+            Some(AiProvider::Openai),
+            Some("draft-model".to_string()),
+            false,
+        );
+        let report = build_ai_draft_report(
+            &request,
+            super::AiDraftProviderPayload {
+                summary: "summary with data:image/png;base64,abc".to_string(),
+                sections: vec![AiDraftSection {
+                    heading: String::new(),
+                    body: "body\nOPENAI_API_KEY=test-secret\nok".to_string(),
+                    bullets: vec!["ANTHROPIC_API_KEY=test-secret".to_string()],
+                }],
+            },
+            true,
+        );
+        let markdown = render_ai_draft_markdown(&report);
+
+        assert_eq!(
+            report.provider_summary,
+            "[redacted sensitive provider or image data]"
+        );
+        assert_eq!(report.sections[0].heading, "Blog Outline");
+        assert!(!markdown.contains("test-secret"));
+        assert!(!markdown.contains("data:image"));
+        assert!(markdown.contains("[redacted sensitive provider or image data]"));
+    }
+
+    #[test]
     fn ai_image_mime_type_matches_openai_supported_inputs() {
         assert_eq!(ai_image_mime_type("png"), Some("image/png"));
         assert_eq!(ai_image_mime_type("jpeg"), Some("image/jpeg"));
@@ -1655,6 +2454,52 @@ mod tests {
                     operation_hash: "blake3:operation-avif".to_string(),
                 },
             ],
+        }
+    }
+
+    fn sample_draft_request(
+        draft_type: AiDraftType,
+        provider: Option<AiProvider>,
+        model: Option<String>,
+        dry_run: bool,
+    ) -> AiDraftRequest {
+        AiDraftRequest {
+            schema_version: 1,
+            draft_type,
+            provider,
+            model,
+            command: "devimg draft".to_string(),
+            config_path: "devimg.toml".to_string(),
+            project_root: ".".to_string(),
+            mode: if provider.is_some() {
+                "provider-draft".to_string()
+            } else {
+                "metadata-only".to_string()
+            },
+            dry_run,
+            output_path: "devimg-draft.md".to_string(),
+            manifest_summary: AiDraftManifestSummary {
+                path: "public/images/devimg-manifest.json".to_string(),
+                readable: true,
+                read_error: None,
+                config_hash: Some("blake3:config".to_string()),
+                source_count: 1,
+                output_count: 2,
+                source_bytes: 1000,
+                output_bytes: 1300,
+                outputs: Vec::new(),
+            },
+            report_summary: AiDraftArtifactSummary {
+                label: "devimg-report".to_string(),
+                path: "devimg-report.md".to_string(),
+                readable: true,
+                read_error: None,
+                bytes: 120,
+                line_count: 4,
+                excerpt: "Dev Image Pipeline Report".to_string(),
+            },
+            changelog_summary: None,
+            optional_artifacts: Vec::new(),
         }
     }
 }
