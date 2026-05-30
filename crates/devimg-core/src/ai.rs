@@ -50,6 +50,7 @@ pub struct AiConsentPreview {
     pub provider: AiProvider,
     pub model: String,
     pub command: String,
+    pub dry_run_command: String,
     pub config_path: String,
     pub project_root: String,
     pub mode: String,
@@ -273,8 +274,8 @@ pub struct AiReviewSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiAltOptions {
-    pub provider: AiProvider,
-    pub model: String,
+    pub provider: Option<AiProvider>,
+    pub model: Option<String>,
     pub command: String,
     pub config_path: PathBuf,
     pub manifest_path: PathBuf,
@@ -290,8 +291,8 @@ pub struct AiAltOptions {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AiAltRequest {
     pub schema_version: u32,
-    pub provider: AiProvider,
-    pub model: String,
+    pub provider: Option<AiProvider>,
+    pub model: Option<String>,
     pub command: String,
     pub config_path: String,
     pub manifest_path: String,
@@ -382,8 +383,8 @@ pub struct AiAltDraft {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AiAltReport {
     pub schema_version: u32,
-    pub provider: AiProvider,
-    pub model: String,
+    pub provider: Option<AiProvider>,
+    pub model: Option<String>,
     pub command: String,
     pub config_path: String,
     pub manifest_path: String,
@@ -772,6 +773,7 @@ pub fn build_ai_consent_preview(
         provider: options.provider,
         model: options.model.clone(),
         command: options.command.clone(),
+        dry_run_command: ai_consent_dry_run_command(options),
         config_path: path_to_string(&options.config_path),
         project_root: display_path(&config.project.root),
         mode: if options.include_images {
@@ -1202,8 +1204,16 @@ pub fn render_ai_alt_markdown(report: &AiAltReport) -> String {
     out.push_str("# DevImg Alt-Text Drafts\n\n");
     out.push_str("Alt text is draft content and must be reviewed by a human before application use. DevImg does not insert this text into application code.\n\n");
     out.push_str("## Summary\n\n");
-    out.push_str(&format!("- Provider: `{}`\n", report.provider.label()));
-    out.push_str(&format!("- Model: `{}`\n", report.model));
+    if let Some(provider) = report.provider {
+        out.push_str(&format!("- Provider: `{}`\n", provider.label()));
+    } else {
+        out.push_str("- Provider: `none`\n");
+    }
+    if let Some(model) = &report.model {
+        out.push_str(&format!("- Model: `{model}`\n"));
+    } else {
+        out.push_str("- Model: `none`\n");
+    }
     out.push_str(&format!("- Mode: `{}`\n", report.mode));
     out.push_str(&format!("- Dry run: `{}`\n", report.dry_run));
     out.push_str(&format!(
@@ -1873,6 +1883,42 @@ fn display_project_path(project_root: &Path, path: &Path) -> String {
         .unwrap_or_else(|_| path_to_string(path))
 }
 
+fn ai_consent_dry_run_command(options: &AiConsentOptions) -> String {
+    let mut command = format!(
+        "{} --config {} --ai-provider {} --model {}",
+        options.command,
+        shell_arg_path(&options.config_path),
+        options.provider.label(),
+        shell_arg(&options.model)
+    );
+    if options.include_images {
+        command.push_str(" --include-images");
+    } else {
+        command.push_str(" --metadata-only");
+    }
+    command.push_str(" --dry-run");
+    if let Some(output_path) = &options.output_path {
+        command.push_str(&format!(" --output {}", shell_arg_path(output_path)));
+    }
+    command
+}
+
+fn shell_arg_path(path: &Path) -> String {
+    shell_arg(&path_to_string(path))
+}
+
+fn shell_arg(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '/' | '.' | '_' | '-' | ':' | '@'))
+    {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
+}
+
 fn manifest_source_count(manifest: &Manifest) -> usize {
     manifest
         .outputs
@@ -2023,6 +2069,7 @@ mod tests {
             provider: AiProvider::Openai,
             model: "test-model".to_string(),
             command: "devimg ai consent".to_string(),
+            dry_run_command: "devimg ai consent --config devimg.toml --ai-provider openai --model test-model --metadata-only --dry-run".to_string(),
             config_path: "devimg.toml".to_string(),
             project_root: ".".to_string(),
             mode: "metadata-only".to_string(),
@@ -2073,6 +2120,7 @@ mod tests {
             provider: AiProvider::Anthropic,
             model: "stable-model".to_string(),
             command: "devimg ai consent".to_string(),
+            dry_run_command: "devimg ai consent --config devimg.toml --ai-provider anthropic --model stable-model --metadata-only --dry-run --output /tmp/consent.json".to_string(),
             config_path: "devimg.toml".to_string(),
             project_root: ".".to_string(),
             mode: "metadata-only".to_string(),
@@ -2222,8 +2270,8 @@ mod tests {
         let request = build_ai_alt_request(
             &manifest,
             &AiAltOptions {
-                provider: AiProvider::Openai,
-                model: "alt-model".to_string(),
+                provider: Some(AiProvider::Openai),
+                model: Some("alt-model".to_string()),
                 command: "devimg alt".to_string(),
                 config_path: PathBuf::from("/repo/devimg.toml"),
                 manifest_path: PathBuf::from("/repo/public/images/devimg-manifest.json"),
@@ -2237,7 +2285,7 @@ mod tests {
             },
         );
 
-        assert_eq!(request.provider, AiProvider::Openai);
+        assert_eq!(request.provider, Some(AiProvider::Openai));
         assert_eq!(request.mode, "include-images");
         assert_eq!(request.config_path, "devimg.toml");
         assert_eq!(request.manifest_path, "public/images/devimg-manifest.json");
@@ -2261,8 +2309,8 @@ mod tests {
         let request = build_ai_alt_request(
             &manifest,
             &AiAltOptions {
-                provider: AiProvider::Openai,
-                model: "dry-run-model".to_string(),
+                provider: Some(AiProvider::Openai),
+                model: Some("dry-run-model".to_string()),
                 command: "devimg alt".to_string(),
                 config_path: PathBuf::from("devimg.toml"),
                 manifest_path: PathBuf::from("public/images/devimg-manifest.json"),
@@ -2295,8 +2343,8 @@ mod tests {
         let request = build_ai_alt_request(
             &manifest,
             &AiAltOptions {
-                provider: AiProvider::Anthropic,
-                model: "mock-model".to_string(),
+                provider: Some(AiProvider::Anthropic),
+                model: Some("mock-model".to_string()),
                 command: "devimg alt".to_string(),
                 config_path: PathBuf::from("devimg.toml"),
                 manifest_path: PathBuf::from("public/images/devimg-manifest.json"),

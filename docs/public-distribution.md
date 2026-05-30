@@ -7,9 +7,9 @@ DevImg is distributed as public crates.io packages, GitHub Release binaries, and
 - Repository: <https://github.com/cleissonom/devimg>
 - CLI crate: <https://crates.io/crates/devimg>
 - Core crate: <https://crates.io/crates/devimg-core>
-- Current release: `v0.2.6`
+- Current release: `v0.2.7`
 - Minimum Rust version for source installs: `1.88`
-- GitHub Action: `cleissonom/devimg/action@v0.2.6`
+- GitHub Action: `cleissonom/devimg/action@v0.2.7`
 
 ## CLI Install
 
@@ -33,12 +33,12 @@ Users who do not want to build from source can download a GitHub Release archive
 Consumer workflows should pin a release tag:
 
 ```yaml
-- uses: cleissonom/devimg/action@v0.2.6
+- uses: cleissonom/devimg/action@v0.2.7
   with:
     mode: check
 ```
 
-The Action downloads the matching GitHub Release archive, verifies its `.sha256` checksum, and runs `devimg`. Projects can pass `binary-path` when testing the Action from a local checkout. The resolved CLI path is also exposed as the `binary-path` output for downstream steps such as `devimg ai consent --dry-run`, `devimg review --ai --dry-run`, `devimg alt --dry-run`, or `devimg draft --dry-run`.
+The Action downloads the matching GitHub Release archive, verifies its `.sha256` checksum, and runs `devimg`. Projects can pass `binary-path` when testing the Action from a local checkout. The resolved CLI path is also exposed as the `binary-path` output for downstream steps such as fully flagged `devimg ai consent`, `devimg review --ai`, `devimg alt`, or `devimg draft` dry-runs.
 
 The Action is not published through GitHub Marketplace. It intentionally lives under `action/` in this repository until a separate Marketplace release becomes useful.
 

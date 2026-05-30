@@ -18,7 +18,7 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["draft", "--help"]), 0);
     let version = run(["--version"]);
     assert_status(&version, 0);
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.6"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.7"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -1114,10 +1114,6 @@ fn alt_metadata_only_writes_json_and_markdown_without_keys() {
             "alt",
             "--config",
             config.as_str(),
-            "--ai-provider",
-            "openai",
-            "--model",
-            "metadata-model",
             "--output",
             alt_output_arg.as_str(),
             "--markdown",
@@ -1137,8 +1133,8 @@ fn alt_metadata_only_writes_json_and_markdown_without_keys() {
     assert!(!json.contains(fake_key));
     assert!(!json.contains("OPENAI_API_KEY"));
     let document: serde_json::Value = serde_json::from_str(&json).expect("alt JSON parses");
-    assert_eq!(document["provider"], "openai");
-    assert_eq!(document["model"], "metadata-model");
+    assert!(document["provider"].is_null());
+    assert!(document["model"].is_null());
     assert_eq!(document["command"], "devimg alt");
     assert_eq!(document["mode"], "metadata-only");
     assert_eq!(document["provider_called"], false);
@@ -1152,6 +1148,8 @@ fn alt_metadata_only_writes_json_and_markdown_without_keys() {
     assert_eq!(document["drafts"][0]["warnings"][0], "needs-human-review");
     let markdown = fs::read_to_string(markdown).expect("alt Markdown reads");
     assert!(markdown.contains("# DevImg Alt-Text Drafts"));
+    assert!(markdown.contains("- Provider: `none`"));
+    assert!(markdown.contains("- Model: `none`"));
     assert!(markdown.contains("Provider called: `false`"));
     assert!(!markdown.contains(fake_key));
     cleanup(&project);
@@ -1262,8 +1260,7 @@ fn alt_validation_and_missing_key_errors_are_stable() {
         .output()
         .expect("devimg runs");
     assert_status(&anthropic, 2);
-    assert!(String::from_utf8_lossy(&anthropic.stderr)
-        .contains("OpenAI image-backed alt-text generation only"));
+    assert!(String::from_utf8_lossy(&anthropic.stderr).contains("requires --ai-provider openai"));
 
     let metadata_only_anthropic = Command::new(env!("CARGO_BIN_EXE_devimg"))
         .current_dir(&project)
@@ -2494,6 +2491,13 @@ fn ai_consent_dry_run_works_without_keys_for_both_providers() {
         assert_eq!(document["provider"], provider);
         assert_eq!(document["model"], model);
         assert_eq!(document["command"], "devimg ai consent");
+        assert_eq!(
+            document["dry_run_command"],
+            format!(
+                "devimg ai consent --config {} --ai-provider {provider} --model {model} --metadata-only --dry-run",
+                config.as_str()
+            )
+        );
         assert_eq!(document["mode"], "metadata-only");
         assert_eq!(document["dry_run"], true);
         assert_eq!(document["paths_included"], true);
