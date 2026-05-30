@@ -100,7 +100,18 @@ devimg ai consent --ai-provider openai --model review-model --output /tmp/devimg
 
 The command is deterministic and timestamp-free. It previews provider, model, command, config path, project root, metadata mode, dry-run status, output path, source files, manifest/report paths, and generated outputs from a readable manifest.
 
-In `0.2.3`, `ai consent` performs no provider call. Dry runs do not require API keys. Non-dry-run previews require `OPENAI_API_KEY` for OpenAI or `ANTHROPIC_API_KEY` for Anthropic, but DevImg must never print, persist, or include key values in artifacts. Metadata-only is the default; `--include-images` only changes preview metadata in this release and does not send bytes anywhere.
+`ai consent` performs no provider call. Dry runs do not require API keys. Non-dry-run previews require `OPENAI_API_KEY` for OpenAI or `ANTHROPIC_API_KEY` for Anthropic, but DevImg must never print, persist, or include key values in artifacts. Metadata-only is the default; `--include-images` only changes preview metadata for consent and does not send bytes anywhere.
+
+## OpenAI AI Review
+
+Use `devimg review --ai` only when a human explicitly asks for provider-backed review. In `0.2.4`, real AI review calls are OpenAI-only and require `--ai-provider openai`, explicit `--model`, and a nonempty `OPENAI_API_KEY` unless `--dry-run` is passed.
+
+```bash
+devimg review --manifest public/images/devimg-manifest.json --ai --ai-provider openai --model "$DEVIMG_OPENAI_TEST_MODEL" --dry-run --ai-output /tmp/devimg-ai-review.json
+devimg review --manifest public/images/devimg-manifest.json --ai --ai-provider openai --model "$DEVIMG_OPENAI_TEST_MODEL" --include-images --ai-output /tmp/devimg-ai-review.json
+```
+
+AI commands may read ignored `.env` files for `OPENAI_API_KEY`, but deterministic commands must not. Metadata-only is the default; pass `--include-images` only after explicit approval to send generated image bytes. AI observations are advisory and must not be treated as permission to hand-edit generated files.
 
 ## Generated Instructions
 

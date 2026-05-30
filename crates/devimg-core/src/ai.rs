@@ -1,14 +1,15 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::{project_relative, resolve_project_path_checked, Config};
-use crate::manifest::read_manifest;
+use crate::manifest::{read_manifest, Manifest};
 use crate::pipeline::path_to_string;
+use crate::quality::manifest_quality_warnings;
 use crate::{scan_sources, Result};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AiProvider {
     Openai,
@@ -101,6 +102,10 @@ pub trait AiProviderClient {
     fn consent_response(&self, preview: &AiConsentPreview) -> AiProviderResponse;
 }
 
+pub trait AiReviewProviderClient {
+    fn review(&self, request: &AiReviewRequest) -> Result<AiReviewProviderPayload>;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MockAiProviderClient {
     provider: AiProvider,
@@ -122,6 +127,192 @@ impl AiProviderClient for MockAiProviderClient {
             selected_file_count: preview.source_files.len(),
             generated_output_count: preview.generated_outputs.len(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiReviewOptions {
+    pub provider: AiProvider,
+    pub model: String,
+    pub command: String,
+    pub manifest_path: PathBuf,
+    pub project_root: PathBuf,
+    pub dry_run: bool,
+    pub include_images: bool,
+    pub image_detail: String,
+    pub max_images: usize,
+    pub ai_output_path: Option<PathBuf>,
+    pub markdown_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiReviewRequest {
+    pub schema_version: u32,
+    pub provider: AiProvider,
+    pub model: String,
+    pub command: String,
+    pub manifest_path: String,
+    pub project_root: String,
+    pub mode: String,
+    pub dry_run: bool,
+    pub paths_included: bool,
+    pub image_bytes_included: bool,
+    pub image_detail: String,
+    pub max_images: usize,
+    pub ai_output_path: Option<String>,
+    pub markdown_path: Option<String>,
+    pub manifest_summary: AiReviewManifestSummary,
+    pub review_signals: Vec<String>,
+    pub outputs: Vec<AiReviewOutput>,
+    pub selected_images: Vec<AiReviewImageInput>,
+    pub skipped_image_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiReviewManifestSummary {
+    pub config_path: String,
+    pub config_hash: String,
+    pub source_count: usize,
+    pub output_count: usize,
+    pub source_bytes: u64,
+    pub output_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiReviewOutput {
+    pub source_path: String,
+    pub output_path: String,
+    pub preset: String,
+    pub fit: String,
+    pub width: u32,
+    pub height: u32,
+    pub format: String,
+    pub bytes: u64,
+    pub hash: String,
+    pub source_width: u32,
+    pub source_height: u32,
+    pub source_bytes: u64,
+    pub image_bytes_included: bool,
+    pub image_detail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiReviewImageInput {
+    pub output_path: String,
+    pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub bytes: u64,
+    pub hash: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct AiReviewProviderPayload {
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub observations: Vec<AiReviewObservation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct AiReviewObservation {
+    pub category: String,
+    pub severity: String,
+    pub source_path: String,
+    pub preset: String,
+    pub output_path: String,
+    pub rationale: String,
+    pub suggested_next_command: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiReviewReport {
+    pub schema_version: u32,
+    pub provider: AiProvider,
+    pub model: String,
+    pub command: String,
+    pub manifest_path: String,
+    pub project_root: String,
+    pub mode: String,
+    pub dry_run: bool,
+    pub paths_included: bool,
+    pub image_bytes_included: bool,
+    pub image_detail: String,
+    pub max_images: usize,
+    pub ai_output_path: Option<String>,
+    pub markdown_path: Option<String>,
+    pub provider_called: bool,
+    pub summary: AiReviewSummary,
+    pub review_signals: Vec<String>,
+    pub outputs: Vec<AiReviewOutput>,
+    pub selected_images: Vec<AiReviewImageInput>,
+    pub provider_summary: String,
+    pub observations: Vec<AiReviewObservation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiReviewSummary {
+    pub source_count: usize,
+    pub output_count: usize,
+    pub selected_image_count: usize,
+    pub skipped_image_count: usize,
+    pub review_signal_count: usize,
+    pub observation_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MockAiReviewProviderClient {
+    provider: AiProvider,
+    fail: bool,
+}
+
+impl MockAiReviewProviderClient {
+    pub fn new(provider: AiProvider) -> Self {
+        Self {
+            provider,
+            fail: false,
+        }
+    }
+
+    pub fn failing(provider: AiProvider) -> Self {
+        Self {
+            provider,
+            fail: true,
+        }
+    }
+}
+
+impl AiReviewProviderClient for MockAiReviewProviderClient {
+    fn review(&self, request: &AiReviewRequest) -> Result<AiReviewProviderPayload> {
+        if self.fail {
+            return Err(crate::DevimgError::config(
+                &request.manifest_path,
+                "mock AI review provider failure",
+            ));
+        }
+
+        let first = request.outputs.first();
+        Ok(AiReviewProviderPayload {
+            summary: format!("mock {} AI review", self.provider.label()),
+            observations: first
+                .map(|output| {
+                    vec![AiReviewObservation {
+                        category: "format-quality concern".to_string(),
+                        severity: "advisory".to_string(),
+                        source_path: output.source_path.clone(),
+                        preset: output.preset.clone(),
+                        output_path: output.output_path.clone(),
+                        rationale: "Mock review observation for provider boundary tests."
+                            .to_string(),
+                        suggested_next_command: format!(
+                            "devimg review --manifest {} --output .devimg/review.html",
+                            request.manifest_path
+                        ),
+                    }]
+                })
+                .unwrap_or_default(),
+        })
     }
 }
 
@@ -199,6 +390,239 @@ pub fn ai_consent_preview_to_json(preview: &AiConsentPreview) -> String {
         + "\n"
 }
 
+pub fn build_ai_review_request(manifest: &Manifest, options: &AiReviewOptions) -> AiReviewRequest {
+    let max_images = options.max_images.max(1);
+    let image_detail = options.image_detail.clone();
+    let mut outputs = manifest
+        .outputs
+        .iter()
+        .map(|output| AiReviewOutput {
+            source_path: output.source_path.clone(),
+            output_path: output.output_path.clone(),
+            preset: output.preset.clone(),
+            fit: output.fit.clone(),
+            width: output.width,
+            height: output.height,
+            format: output.format.clone(),
+            bytes: output.bytes,
+            hash: output.hash.clone(),
+            source_width: output.source_width,
+            source_height: output.source_height,
+            source_bytes: output.source_bytes,
+            image_bytes_included: false,
+            image_detail: None,
+        })
+        .collect::<Vec<_>>();
+    outputs.sort_by(|left, right| {
+        left.source_path
+            .cmp(&right.source_path)
+            .then(left.preset.cmp(&right.preset))
+            .then(left.width.cmp(&right.width))
+            .then(left.height.cmp(&right.height))
+            .then(left.format.cmp(&right.format))
+            .then(left.output_path.cmp(&right.output_path))
+    });
+
+    let selected_images = if options.include_images {
+        outputs
+            .iter()
+            .filter_map(|output| {
+                ai_image_mime_type(&output.format).map(|mime_type| AiReviewImageInput {
+                    output_path: output.output_path.clone(),
+                    mime_type: mime_type.to_string(),
+                    width: output.width,
+                    height: output.height,
+                    bytes: output.bytes,
+                    hash: output.hash.clone(),
+                    detail: image_detail.clone(),
+                })
+            })
+            .take(max_images)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let selected_paths = selected_images
+        .iter()
+        .map(|image| image.output_path.clone())
+        .collect::<BTreeSet<_>>();
+    for output in &mut outputs {
+        if selected_paths.contains(&output.output_path) {
+            output.image_bytes_included = true;
+            output.image_detail = Some(image_detail.clone());
+        }
+    }
+
+    let output_count = manifest.outputs.len();
+    let skipped_image_count = if options.include_images {
+        output_count.saturating_sub(selected_images.len())
+    } else {
+        0
+    };
+    let mode = if options.include_images {
+        "include-images"
+    } else {
+        "metadata-only"
+    };
+
+    AiReviewRequest {
+        schema_version: 1,
+        provider: options.provider,
+        model: options.model.clone(),
+        command: options.command.clone(),
+        manifest_path: display_project_path(&options.project_root, &options.manifest_path),
+        project_root: display_path(&options.project_root),
+        mode: mode.to_string(),
+        dry_run: options.dry_run,
+        paths_included: true,
+        image_bytes_included: options.include_images,
+        image_detail,
+        max_images,
+        ai_output_path: options
+            .ai_output_path
+            .as_deref()
+            .map(|path| display_project_path(&options.project_root, path)),
+        markdown_path: options
+            .markdown_path
+            .as_deref()
+            .map(|path| display_project_path(&options.project_root, path)),
+        manifest_summary: AiReviewManifestSummary {
+            config_path: manifest.config_path.clone(),
+            config_hash: manifest.config_hash.clone(),
+            source_count: manifest_source_count(manifest),
+            output_count,
+            source_bytes: manifest.source_bytes_total(),
+            output_bytes: manifest.output_bytes_total(),
+        },
+        review_signals: manifest_quality_warnings(manifest),
+        outputs,
+        selected_images,
+        skipped_image_count,
+    }
+}
+
+pub fn build_ai_review_report(
+    request: &AiReviewRequest,
+    payload: AiReviewProviderPayload,
+    provider_called: bool,
+) -> AiReviewReport {
+    let observations = payload
+        .observations
+        .into_iter()
+        .map(normalize_ai_review_observation)
+        .collect::<Vec<_>>();
+    AiReviewReport {
+        schema_version: request.schema_version,
+        provider: request.provider,
+        model: request.model.clone(),
+        command: request.command.clone(),
+        manifest_path: request.manifest_path.clone(),
+        project_root: request.project_root.clone(),
+        mode: request.mode.clone(),
+        dry_run: request.dry_run,
+        paths_included: request.paths_included,
+        image_bytes_included: request.image_bytes_included,
+        image_detail: request.image_detail.clone(),
+        max_images: request.max_images,
+        ai_output_path: request.ai_output_path.clone(),
+        markdown_path: request.markdown_path.clone(),
+        provider_called,
+        summary: AiReviewSummary {
+            source_count: request.manifest_summary.source_count,
+            output_count: request.manifest_summary.output_count,
+            selected_image_count: request.selected_images.len(),
+            skipped_image_count: request.skipped_image_count,
+            review_signal_count: request.review_signals.len(),
+            observation_count: observations.len(),
+        },
+        review_signals: request.review_signals.clone(),
+        outputs: request.outputs.clone(),
+        selected_images: request.selected_images.clone(),
+        provider_summary: payload.summary,
+        observations,
+    }
+}
+
+pub fn build_ai_review_dry_run_report(request: &AiReviewRequest) -> AiReviewReport {
+    build_ai_review_report(
+        request,
+        AiReviewProviderPayload {
+            summary: "Dry run only; no provider call was made.".to_string(),
+            observations: Vec::new(),
+        },
+        false,
+    )
+}
+
+pub fn ai_review_report_to_json(report: &AiReviewReport) -> String {
+    serde_json::to_string_pretty(report).expect("AI review report serialization cannot fail") + "\n"
+}
+
+pub fn render_ai_review_markdown(report: &AiReviewReport) -> String {
+    let mut out = String::new();
+    out.push_str("# DevImg AI Review\n\n");
+    out.push_str("AI observations are advisory and must be reviewed by a human before changing source images or configuration.\n\n");
+    out.push_str("## Summary\n\n");
+    out.push_str(&format!("- Provider: `{}`\n", report.provider.label()));
+    out.push_str(&format!("- Model: `{}`\n", report.model));
+    out.push_str(&format!("- Mode: `{}`\n", report.mode));
+    out.push_str(&format!("- Dry run: `{}`\n", report.dry_run));
+    out.push_str(&format!(
+        "- Provider called: `{}`\n",
+        report.provider_called
+    ));
+    out.push_str(&format!("- Manifest: `{}`\n", report.manifest_path));
+    out.push_str(&format!(
+        "- Outputs reviewed: `{}`\n",
+        report.summary.output_count
+    ));
+    out.push_str(&format!(
+        "- Image inputs selected: `{}`\n",
+        report.summary.selected_image_count
+    ));
+    out.push_str(&format!(
+        "- Observations: `{}`\n\n",
+        report.summary.observation_count
+    ));
+
+    if !report.review_signals.is_empty() {
+        out.push_str("## Deterministic Signals\n\n");
+        for signal in &report.review_signals {
+            out.push_str(&format!("- {signal}\n"));
+        }
+        out.push('\n');
+    }
+
+    out.push_str("## Observations\n\n");
+    if report.observations.is_empty() {
+        out.push_str("No AI observations.\n");
+    } else {
+        for observation in &report.observations {
+            out.push_str(&format!("### {}\n\n", observation.category));
+            out.push_str(&format!("- Severity: `{}`\n", observation.severity));
+            out.push_str(&format!("- Source: `{}`\n", observation.source_path));
+            out.push_str(&format!("- Preset: `{}`\n", observation.preset));
+            out.push_str(&format!("- Output: `{}`\n", observation.output_path));
+            out.push_str(&format!("- Rationale: {}\n", observation.rationale));
+            out.push_str(&format!(
+                "- Suggested next command: `{}`\n\n",
+                observation.suggested_next_command
+            ));
+        }
+    }
+    out
+}
+
+pub fn ai_image_mime_type(format: &str) -> Option<&'static str> {
+    match format.to_ascii_lowercase().as_str() {
+        "png" => Some("image/png"),
+        "jpeg" | "jpg" => Some("image/jpeg"),
+        "webp" => Some("image/webp"),
+        "gif" => Some("image/gif"),
+        _ => None,
+    }
+}
+
 fn display_path(path: &Path) -> String {
     let rendered = path_to_string(path);
     if rendered.is_empty() {
@@ -208,12 +632,57 @@ fn display_path(path: &Path) -> String {
     }
 }
 
+fn display_project_path(project_root: &Path, path: &Path) -> String {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        project_root.join(path)
+    };
+    absolute
+        .strip_prefix(project_root)
+        .map(path_to_string)
+        .unwrap_or_else(|_| path_to_string(path))
+}
+
+fn manifest_source_count(manifest: &Manifest) -> usize {
+    manifest
+        .outputs
+        .iter()
+        .map(|output| output.source_path.as_str())
+        .collect::<BTreeSet<_>>()
+        .len()
+}
+
+fn normalize_ai_review_observation(mut observation: AiReviewObservation) -> AiReviewObservation {
+    observation.severity = "advisory".to_string();
+    observation.category = normalize_observation_category(&observation.category).to_string();
+    observation
+}
+
+fn normalize_observation_category(category: &str) -> &'static str {
+    match category {
+        "crop risk" => "crop risk",
+        "readability risk" => "readability risk",
+        "excessive padding" => "excessive padding",
+        "low-resolution source" => "low-resolution source",
+        "format-quality concern" => "format-quality concern",
+        "accessibility note" => "accessibility note",
+        _ => "format-quality concern",
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::{
-        ai_consent_preview_to_json, AiConsentPreview, AiGeneratedOutput, AiProvider,
-        AiProviderClient, AiSelectedFile, MockAiProviderClient,
+        ai_consent_preview_to_json, ai_image_mime_type, ai_review_report_to_json,
+        build_ai_review_dry_run_report, build_ai_review_report, build_ai_review_request,
+        render_ai_review_markdown, AiConsentPreview, AiGeneratedOutput, AiProvider,
+        AiProviderClient, AiReviewOptions, AiReviewProviderClient, AiSelectedFile,
+        MockAiProviderClient, MockAiReviewProviderClient,
     };
+    use crate::manifest::{Manifest, ManifestOutput};
 
     #[test]
     fn provider_labels_and_env_vars_are_stable() {
@@ -302,5 +771,179 @@ mod tests {
         assert!(json.contains("\"model\": \"stable-model\""));
         assert!(!json.contains("generated_at"));
         assert!(!json.contains("timestamp"));
+    }
+
+    #[test]
+    fn ai_review_request_selects_metadata_and_image_inputs() {
+        let manifest = sample_manifest();
+        let request = build_ai_review_request(
+            &manifest,
+            &AiReviewOptions {
+                provider: AiProvider::Openai,
+                model: "vision-model".to_string(),
+                command: "devimg review --ai".to_string(),
+                manifest_path: PathBuf::from("/repo/public/images/devimg-manifest.json"),
+                project_root: PathBuf::from("/repo"),
+                dry_run: true,
+                include_images: true,
+                image_detail: "low".to_string(),
+                max_images: 1,
+                ai_output_path: Some(PathBuf::from("/repo/devimg-ai-review.json")),
+                markdown_path: Some(PathBuf::from("/tmp/devimg-ai-review.md")),
+            },
+        );
+
+        assert_eq!(request.provider, AiProvider::Openai);
+        assert_eq!(request.mode, "include-images");
+        assert_eq!(request.manifest_path, "public/images/devimg-manifest.json");
+        assert_eq!(
+            request.ai_output_path.as_deref(),
+            Some("devimg-ai-review.json")
+        );
+        assert_eq!(
+            request.markdown_path.as_deref(),
+            Some("/tmp/devimg-ai-review.md")
+        );
+        assert_eq!(request.manifest_summary.source_count, 1);
+        assert_eq!(request.manifest_summary.output_count, 2);
+        assert_eq!(request.outputs.len(), 2);
+        assert_eq!(request.selected_images.len(), 1);
+        assert_eq!(request.selected_images[0].mime_type, "image/webp");
+        let webp_output = request
+            .outputs
+            .iter()
+            .find(|output| output.format == "webp")
+            .expect("webp output exists");
+        let avif_output = request
+            .outputs
+            .iter()
+            .find(|output| output.format == "avif")
+            .expect("avif output exists");
+        assert!(webp_output.image_bytes_included);
+        assert!(!avif_output.image_bytes_included);
+        assert_eq!(request.skipped_image_count, 1);
+    }
+
+    #[test]
+    fn ai_review_dry_run_json_and_markdown_are_timestamp_free() {
+        let manifest = sample_manifest();
+        let request = build_ai_review_request(
+            &manifest,
+            &AiReviewOptions {
+                provider: AiProvider::Openai,
+                model: "dry-run-model".to_string(),
+                command: "devimg review --ai".to_string(),
+                manifest_path: PathBuf::from("public/images/devimg-manifest.json"),
+                project_root: PathBuf::from("."),
+                dry_run: true,
+                include_images: false,
+                image_detail: "low".to_string(),
+                max_images: 8,
+                ai_output_path: None,
+                markdown_path: None,
+            },
+        );
+        let report = build_ai_review_dry_run_report(&request);
+        let json = ai_review_report_to_json(&report);
+        let markdown = render_ai_review_markdown(&report);
+
+        assert!(json.contains("\"provider\": \"openai\""));
+        assert!(json.contains("\"dry_run\": true"));
+        assert!(json.contains("\"provider_called\": false"));
+        assert!(!json.contains("generated_at"));
+        assert!(!json.contains("timestamp"));
+        assert!(markdown.contains("# DevImg AI Review"));
+        assert!(markdown.contains("Dry run: `true`"));
+    }
+
+    #[test]
+    fn mock_ai_review_provider_returns_stable_payload_and_failure() {
+        let manifest = sample_manifest();
+        let request = build_ai_review_request(
+            &manifest,
+            &AiReviewOptions {
+                provider: AiProvider::Anthropic,
+                model: "mock-model".to_string(),
+                command: "devimg review --ai".to_string(),
+                manifest_path: PathBuf::from("public/images/devimg-manifest.json"),
+                project_root: PathBuf::from("."),
+                dry_run: false,
+                include_images: false,
+                image_detail: "low".to_string(),
+                max_images: 8,
+                ai_output_path: None,
+                markdown_path: None,
+            },
+        );
+
+        let payload = MockAiReviewProviderClient::new(AiProvider::Anthropic)
+            .review(&request)
+            .expect("mock provider succeeds");
+        let report = build_ai_review_report(&request, payload, true);
+
+        assert!(report.provider_called);
+        assert_eq!(report.provider_summary, "mock anthropic AI review");
+        assert_eq!(report.observations.len(), 1);
+        assert_eq!(report.observations[0].severity, "advisory");
+
+        let error = MockAiReviewProviderClient::failing(AiProvider::Openai)
+            .review(&request)
+            .expect_err("mock provider fails");
+        assert!(error
+            .to_string()
+            .contains("mock AI review provider failure"));
+    }
+
+    #[test]
+    fn ai_image_mime_type_matches_openai_supported_inputs() {
+        assert_eq!(ai_image_mime_type("png"), Some("image/png"));
+        assert_eq!(ai_image_mime_type("jpeg"), Some("image/jpeg"));
+        assert_eq!(ai_image_mime_type("jpg"), Some("image/jpeg"));
+        assert_eq!(ai_image_mime_type("webp"), Some("image/webp"));
+        assert_eq!(ai_image_mime_type("gif"), Some("image/gif"));
+        assert_eq!(ai_image_mime_type("avif"), None);
+    }
+
+    fn sample_manifest() -> Manifest {
+        Manifest {
+            version: 1,
+            generated_at: "unix:123".to_string(),
+            config_path: "devimg.toml".to_string(),
+            config_hash: "blake3:config".to_string(),
+            outputs: vec![
+                ManifestOutput {
+                    source_path: "assets/images/sample.png".to_string(),
+                    source_hash: "blake3:source".to_string(),
+                    source_width: 100,
+                    source_height: 80,
+                    source_bytes: 1000,
+                    output_path: "public/images/generated/sample.project-card.64.webp".to_string(),
+                    preset: "project-card".to_string(),
+                    fit: "cover".to_string(),
+                    width: 64,
+                    height: 64,
+                    format: "webp".to_string(),
+                    bytes: 700,
+                    hash: "blake3:webp".to_string(),
+                    operation_hash: "blake3:operation-webp".to_string(),
+                },
+                ManifestOutput {
+                    source_path: "assets/images/sample.png".to_string(),
+                    source_hash: "blake3:source".to_string(),
+                    source_width: 100,
+                    source_height: 80,
+                    source_bytes: 1000,
+                    output_path: "public/images/generated/sample.project-card.64.avif".to_string(),
+                    preset: "project-card".to_string(),
+                    fit: "cover".to_string(),
+                    width: 64,
+                    height: 64,
+                    format: "avif".to_string(),
+                    bytes: 600,
+                    hash: "blake3:avif".to_string(),
+                    operation_hash: "blake3:operation-avif".to_string(),
+                },
+            ],
+        }
     }
 }

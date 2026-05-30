@@ -162,7 +162,15 @@ jobs:
             --model openai-dry-run-model \
             --dry-run \
             --output "${RUNNER_TEMP}/portfolio-openai-consent.json"
+          "$DEVIMG_BIN" review \
+            --manifest examples/portfolio/public/images/devimg-manifest.json \
+            --ai \
+            --ai-provider openai \
+            --model openai-dry-run-model \
+            --dry-run \
+            --ai-output "${RUNNER_TEMP}/portfolio-openai-ai-review.json"
           test -s "${RUNNER_TEMP}/portfolio-openai-consent.json"
+          test -s "${RUNNER_TEMP}/portfolio-openai-ai-review.json"
 
       - name: Verify action smoke artifacts
         run: |
@@ -183,12 +191,14 @@ jobs:
             --model openai-dry-run-model \
             --dry-run \
             --output "${RUNNER_TEMP}/dogfood-openai-consent.json"
-          target/debug/devimg ai consent \
-            --config examples/dogfood/devimg.toml \
-            --ai-provider anthropic \
-            --model anthropic-dry-run-model \
+          target/debug/devimg review \
+            --manifest examples/dogfood/public/images/devimg-manifest.json \
+            --ai \
+            --ai-provider openai \
+            --model openai-dry-run-model \
             --dry-run \
-            --output "${RUNNER_TEMP}/dogfood-anthropic-consent.json"
+            --ai-output "${RUNNER_TEMP}/dogfood-openai-ai-review.json" \
+            --markdown "${RUNNER_TEMP}/dogfood-openai-ai-review.md"
           target/debug/devimg manifest export \
             --manifest examples/dogfood/public/images/devimg-manifest.json \
             --format typescript \
@@ -217,5 +227,6 @@ jobs:
           test -s examples/dogfood/public/images/devimg-manifest.json
           test -s "${RUNNER_TEMP}/dogfood.generated.ts"
           test -s "${RUNNER_TEMP}/dogfood-openai-consent.json"
-          test -s "${RUNNER_TEMP}/dogfood-anthropic-consent.json"
+          test -s "${RUNNER_TEMP}/dogfood-openai-ai-review.json"
+          test -s "${RUNNER_TEMP}/dogfood-openai-ai-review.md"
           test -s examples/dogfood/.devimg/review.html

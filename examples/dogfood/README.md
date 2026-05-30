@@ -35,12 +35,14 @@ cargo run -p devimg -- ai consent \
   --dry-run \
   --output /tmp/devimg-dogfood-openai-consent.json \
   --force
-cargo run -p devimg -- ai consent \
-  --config examples/dogfood/devimg.toml \
-  --ai-provider anthropic \
-  --model anthropic-dry-run-model \
+cargo run -p devimg -- review \
+  --manifest examples/dogfood/public/images/devimg-manifest.json \
+  --ai \
+  --ai-provider openai \
+  --model openai-dry-run-model \
   --dry-run \
-  --output /tmp/devimg-dogfood-anthropic-consent.json \
+  --ai-output /tmp/devimg-dogfood-openai-ai-review.json \
+  --markdown /tmp/devimg-dogfood-openai-ai-review.md \
   --force
 cargo run -p devimg -- manifest export \
   --manifest examples/dogfood/public/images/devimg-manifest.json \
@@ -56,6 +58,6 @@ cargo run -p devimg -- review \
 
 The review artifact is derived output. Use the command above before taking screenshots for docs, release notes, or demos. If a screenshot is committed later, refresh it from the regenerated review artifact rather than editing it by hand.
 
-The suggestion gate is read-only and should stay in CI. The explicit suggestion and AI consent preview artifact commands write to `/tmp` for local review; do not commit those files unless a later task intentionally promotes them. Consent dry-runs require no API keys, include no image bytes by default, and perform no OpenAI or Anthropic calls in `0.2.3`.
+The suggestion gate is read-only and should stay in CI. The explicit suggestion, AI consent preview, and AI review dry-run artifact commands write to `/tmp` for local review; do not commit those files unless a later task intentionally promotes them. Consent and review dry-runs require no API keys, include no image bytes by default, and perform no OpenAI calls. Real `review --ai` calls in `0.2.4` are OpenAI-only and send image bytes only with `--include-images`.
 
 Use this example when changing DevImg behavior that affects hashed output filenames, source-specific paths, contain resizing, crop anchors, helper exports, review artifacts, or Action smoke coverage.
