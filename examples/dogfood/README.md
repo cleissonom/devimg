@@ -44,6 +44,14 @@ cargo run -p devimg -- review \
   --ai-output /tmp/devimg-dogfood-openai-ai-review.json \
   --markdown /tmp/devimg-dogfood-openai-ai-review.md \
   --force
+cargo run -p devimg -- alt \
+  --config examples/dogfood/devimg.toml \
+  --ai-provider openai \
+  --model openai-dry-run-model \
+  --dry-run \
+  --output /tmp/devimg-dogfood-openai-alt.json \
+  --markdown /tmp/devimg-dogfood-openai-alt.md \
+  --force
 cargo run -p devimg -- manifest export \
   --manifest examples/dogfood/public/images/devimg-manifest.json \
   --format typescript \
@@ -58,6 +66,6 @@ cargo run -p devimg -- review \
 
 The review artifact is derived output. Use the command above before taking screenshots for docs, release notes, or demos. If a screenshot is committed later, refresh it from the regenerated review artifact rather than editing it by hand.
 
-The suggestion gate is read-only and should stay in CI. The explicit suggestion, AI consent preview, and AI review dry-run artifact commands write to `/tmp` for local review; do not commit those files unless a later task intentionally promotes them. Consent and review dry-runs require no API keys, include no image bytes by default, and perform no OpenAI calls. Real `review --ai` calls in `0.2.4` are OpenAI-only and send image bytes only with `--include-images`.
+The suggestion gate is read-only and should stay in CI. The explicit suggestion, AI consent preview, AI review dry-run, and alt-text dry-run artifact commands write to `/tmp` for local review; do not commit those files unless a later task intentionally promotes them. Consent, review, and alt dry-runs require no API keys, include no image bytes by default, and perform no OpenAI calls. Real `review --ai` and `alt --include-images` calls are OpenAI-only in `0.2.5` and send image bytes only with `--include-images`.
 
 Use this example when changing DevImg behavior that affects hashed output filenames, source-specific paths, contain resizing, crop anchors, helper exports, review artifacts, or Action smoke coverage.

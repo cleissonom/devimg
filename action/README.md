@@ -10,7 +10,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.2.4
+      - uses: cleissonom/devimg/action@v0.2.5
         with:
           mode: check
           export-output: lib/devimg.generated.ts
@@ -34,7 +34,7 @@ Pin the release tag from public repositories with `cleissonom/devimg/action@vX.Y
 - `working-directory`: command working directory. Default: `.`.
 - `fail-on-warning`: pass `--fail-on-warning` in check mode. Acknowledged warnings remain visible but do not fail strict checks.
 - `binary-path`: use a prebuilt local binary, useful for smoke tests.
-- `version`: release version to download when no binary is found. Default: `v0.2.4`.
+- `version`: release version to download when no binary is found. Default: `v0.2.5`.
 - `report-path`: configured report path appended to the step summary; this does not override `devimg.toml`.
 - `manifest-path`: expected manifest path exposed as an output; this does not override `devimg.toml`.
 - `export-output`: optional checked-in manifest export/helper file to verify in check mode.
@@ -57,6 +57,6 @@ When `review-output` is set, the Action runs `devimg review --manifest <path> --
 - `report-path`
 - `manifest-path`
 - `review-output`
-- `binary-path`: resolved CLI path. Downstream steps can call this directly, for example to run `devimg ai consent --dry-run` or `devimg review --ai --dry-run` after the Action has resolved or downloaded the binary.
+- `binary-path`: resolved CLI path. Downstream steps can call this directly, for example to run `devimg ai consent --dry-run`, `devimg review --ai --dry-run`, or `devimg alt --dry-run` after the Action has resolved or downloaded the binary.
 
 In check mode, the Action passes `devimg check --no-report`, so it validates without rewriting reports. It also does not commit generated files, rewrite manifest helper files, upload artifacts automatically, or post PR comments.

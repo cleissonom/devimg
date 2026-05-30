@@ -17,7 +17,7 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["review", "--help"]), 0);
     let version = run(["--version"]);
     assert_status(&version, 0);
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.4"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.5"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -1094,6 +1094,233 @@ fn review_ai_validation_and_missing_key_errors_are_stable() {
     assert_status(&invalid_mode, 2);
     assert!(String::from_utf8_lossy(&invalid_mode.stderr)
         .contains("--metadata-only cannot be combined with --include-images"));
+    cleanup(&project);
+}
+
+#[test]
+fn alt_metadata_only_writes_json_and_markdown_without_keys() {
+    let project = fixture_project("alt_metadata_only", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    let alt_output = project.join("alt.json");
+    let alt_output_arg = path_arg(alt_output.clone());
+    let markdown = project.join("alt.md");
+    let markdown_arg = path_arg(markdown.clone());
+    let fake_key = "test-openai-alt-secret-do-not-leak";
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    let output = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "alt",
+            "--config",
+            config.as_str(),
+            "--ai-provider",
+            "openai",
+            "--model",
+            "metadata-model",
+            "--output",
+            alt_output_arg.as_str(),
+            "--markdown",
+            markdown_arg.as_str(),
+        ])
+        .env("OPENAI_API_KEY", fake_key)
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+
+    assert_status(&output, 0);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stdout.contains(fake_key));
+    assert!(!stderr.contains(fake_key));
+    let json = fs::read_to_string(&alt_output).expect("alt JSON reads");
+    assert!(!json.contains(fake_key));
+    assert!(!json.contains("OPENAI_API_KEY"));
+    let document: serde_json::Value = serde_json::from_str(&json).expect("alt JSON parses");
+    assert_eq!(document["provider"], "openai");
+    assert_eq!(document["model"], "metadata-model");
+    assert_eq!(document["command"], "devimg alt");
+    assert_eq!(document["mode"], "metadata-only");
+    assert_eq!(document["provider_called"], false);
+    assert_eq!(document["image_bytes_included"], false);
+    assert_eq!(document["summary"]["source_count"], 1);
+    assert_eq!(
+        document["drafts"][0]["source_path"],
+        "assets/images/sample.png"
+    );
+    assert_eq!(document["drafts"][0]["candidate_alt_text"], "");
+    assert_eq!(document["drafts"][0]["warnings"][0], "needs-human-review");
+    let markdown = fs::read_to_string(markdown).expect("alt Markdown reads");
+    assert!(markdown.contains("# DevImg Alt-Text Drafts"));
+    assert!(markdown.contains("Provider called: `false`"));
+    assert!(!markdown.contains(fake_key));
+    cleanup(&project);
+}
+
+#[test]
+fn alt_include_images_dry_run_default_output_and_overwrite_are_stable() {
+    let project = fixture_project("alt_include_images", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .current_dir(&project)
+        .args([
+            "alt",
+            "--ai-provider",
+            "openai",
+            "--model",
+            "dry-run-model",
+            "--dry-run",
+            "--include-images",
+            "--max-images",
+            "1",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+
+    assert_status(&output, 0);
+    let alt_output = project.join("devimg-alt.json");
+    let document: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&alt_output).expect("alt JSON reads"))
+            .expect("alt JSON parses");
+    assert_eq!(document["mode"], "include-images");
+    assert_eq!(document["image_bytes_included"], true);
+    assert_eq!(document["provider_called"], false);
+    assert_eq!(document["summary"]["selected_image_count"], 1);
+    assert_eq!(
+        document["selected_images"][0]["image_path"],
+        "assets/images/sample.png"
+    );
+    assert_eq!(document["selected_images"][0]["mime_type"], "image/png");
+    assert_eq!(document["selected_images"][0]["detail"], "low");
+    assert!(!fs::read_to_string(&alt_output)
+        .expect("alt JSON reads")
+        .contains("base64"));
+
+    let refused = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .current_dir(&project)
+        .args([
+            "alt",
+            "--ai-provider",
+            "openai",
+            "--model",
+            "dry-run-model",
+            "--dry-run",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&refused, 4);
+    cleanup(&project);
+}
+
+#[test]
+fn alt_validation_and_missing_key_errors_are_stable() {
+    let project = fixture_project("alt_validation", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+
+    let missing_key = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .current_dir(&project)
+        .args([
+            "alt",
+            "--ai-provider",
+            "openai",
+            "--model",
+            "openai-model",
+            "--include-images",
+            "--output",
+            "/tmp/devimg-test-missing-key-alt.json",
+            "--force",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&missing_key, 2);
+    let stderr = String::from_utf8_lossy(&missing_key.stderr);
+    assert!(stderr.contains("OPENAI_API_KEY"));
+    assert!(!stderr.contains("ANTHROPIC_API_KEY"));
+
+    let anthropic = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .current_dir(&project)
+        .args([
+            "alt",
+            "--ai-provider",
+            "anthropic",
+            "--model",
+            "anthropic-model",
+            "--include-images",
+            "--dry-run",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&anthropic, 2);
+    assert!(String::from_utf8_lossy(&anthropic.stderr)
+        .contains("OpenAI image-backed alt-text generation only"));
+
+    let metadata_only_anthropic = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .current_dir(&project)
+        .args([
+            "alt",
+            "--ai-provider",
+            "anthropic",
+            "--model",
+            "anthropic-model",
+            "--dry-run",
+            "--output",
+            "/tmp/devimg-test-anthropic-alt-placeholder.json",
+            "--force",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&metadata_only_anthropic, 0);
+
+    let invalid_mode = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .current_dir(&project)
+        .args([
+            "alt",
+            "--ai-provider",
+            "openai",
+            "--model",
+            "openai-model",
+            "--metadata-only",
+            "--include-images",
+            "--dry-run",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&invalid_mode, 2);
+    assert!(String::from_utf8_lossy(&invalid_mode.stderr)
+        .contains("--metadata-only cannot be combined with --include-images"));
+
+    let invalid_max = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .current_dir(&project)
+        .args([
+            "alt",
+            "--ai-provider",
+            "openai",
+            "--model",
+            "openai-model",
+            "--max-images",
+            "0",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&invalid_max, 2);
+    assert!(String::from_utf8_lossy(&invalid_max.stderr)
+        .contains("--max-images must be greater than 0"));
     cleanup(&project);
 }
 

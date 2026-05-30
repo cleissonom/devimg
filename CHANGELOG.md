@@ -4,6 +4,14 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 ## Unreleased
 
+## 0.2.5
+
+- Added `devimg alt` for opt-in OpenAI alt-text draft artifacts from manifest source images.
+- Added metadata-only placeholder output by default, optional Markdown output, dry-run previews, overwrite protection, image-detail and max-image controls, and source-level draft records.
+- Added OpenAI image-backed alt-text generation behind explicit `--include-images`, with Anthropic real alt-text calls deferred.
+- Kept alt text as reviewable draft content only; DevImg does not edit application code, source images, generated variants, manifests, reports, or `devimg.toml`.
+- Updated CI smoke coverage, docs, release references, and dogfood guidance for `v0.2.5`.
+
 ## 0.2.4
 
 - Added `devimg review --ai` for opt-in OpenAI AI review of manifest metadata and, with explicit `--include-images`, generated image bytes.
