@@ -5,6 +5,8 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 ## Unreleased
 
 - Replaced the completed v0.2 AI roadmap and future-note file with one active roadmap for `0.2.8`, `0.2.9`, and `0.2.10`.
+- Added remote/dynamic image roadmap slices for read-only social-preview audits, remote source snapshots, bucket/CDN audits, and a future publish/sync design gate.
+- Documented the remote audit testing strategy: fake-server CI coverage, `cleisson.com` dogfood, owned public URL smokes, and no AI in the first remote feature.
 
 ## 0.2.7
 
