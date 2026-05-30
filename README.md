@@ -53,6 +53,7 @@ Useful commands:
 ```bash
 cargo run -p devimg -- doctor --config examples/portfolio/devimg.toml
 cargo run -p devimg -- doctor --config examples/portfolio/devimg.toml --json
+cargo run -p devimg -- suggest --metadata-only --config examples/portfolio/devimg.toml --output /tmp/devimg-suggestions.json
 cargo run -p devimg -- agent task --config examples/portfolio/devimg.toml --agent codex
 cargo run -p devimg -- agent init --target both --stdout
 cargo run -p devimg -- optimize --config examples/portfolio/devimg.toml --dry-run
@@ -277,6 +278,21 @@ reason = "Intentional card framing after visual review."
 
 Acknowledged warnings move to an `Acknowledged Warnings` section in reports and `acknowledged_warnings` in `doctor --json`. They remain visible, but `devimg check --fail-on-warning` only fails on unacknowledged warnings. Prefer changing `quality`, `widths`, `fit`, `crop`, `allow_upscale`, or source assets when the warning represents a real regression.
 
+## Deterministic Suggestions
+
+Use `suggest --metadata-only` to convert existing DevImg diagnostics into stable JSON for humans and coding agents. The command is local-only: it does not call OpenAI, Anthropic, or any external provider, and it does not rewrite `devimg.toml`.
+
+```bash
+devimg suggest --metadata-only
+devimg suggest --metadata-only --output devimg-suggestions.json
+devimg suggest --metadata-only --markdown devimg-suggestions.md
+devimg suggest --metadata-only --output devimg-suggestions.json --markdown devimg-suggestions.md --force
+```
+
+The JSON output defaults to `devimg-suggestions.json` under the configured project root. Use `--config <path>` when the project does not use the default `devimg.toml`. Existing JSON or Markdown outputs are protected unless `--force` is passed.
+
+Suggestions include schema version, config path, mode, summary counts, affected source/output metadata when DevImg can prove it, severity, rationale, structured `suggested_config` data, and next commands. The output is deterministic and diffable, with no generated timestamp.
+
 ## Framework Diagnostics
 
 `devimg doctor` detects common frontend projects from config files and `package.json` dependencies:
@@ -307,6 +323,7 @@ fit = "contain"
 - `doctor` is read-only. It does not generate images, rewrite reports, update manifests, or touch manifest export files.
 - `optimize --dry-run` plans work without writing files.
 - Existing unmanaged outputs are not overwritten unless config `overwrite = true` or CLI `--allow-overwrite` is used.
+- `suggest --metadata-only` writes reviewable suggestion files only; it does not call providers or edit config, sources, generated variants, manifests, reports, or helper files.
 - Re-encoding strips metadata by default. `strip_metadata = false` is parsed, but the current encoders do not preserve source metadata.
 - `check` fails on missing outputs, stale manifests, modified outputs, outdated config hashes, and byte budget violations. Add `--fail-on-warning` when advisory warnings should fail CI, or `--no-report` when a wrapper needs read-only validation without rewriting the Markdown report.
 
@@ -370,7 +387,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.1.16
+      - uses: cleissonom/devimg/action@v0.2.1
         with:
           mode: check
           export-output: lib/devimg.generated.ts
@@ -418,8 +435,8 @@ cargo install devimg
 Create a version tag that matches the workspace version and push it after publishing crates:
 
 ```bash
-git tag v0.1.16
-git push origin v0.1.16
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

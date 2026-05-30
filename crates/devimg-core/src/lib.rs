@@ -13,6 +13,7 @@ mod quality;
 mod report;
 mod review;
 mod scan;
+mod suggest;
 mod transform;
 mod warnings;
 
@@ -46,6 +47,10 @@ pub use report::{
     render_doctor_report, render_manifest_compare_report, render_manifest_report, render_run_report,
 };
 pub use review::{render_manifest_review, ManifestReviewOptions};
+pub use suggest::{
+    render_suggestion_markdown, suggest, suggestion_report_to_json, SuggestOptions,
+    SuggestedConfigPatch, SuggestionItem, SuggestionReport, SuggestionSummary,
+};
 
 use std::path::PathBuf;
 

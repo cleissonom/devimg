@@ -83,6 +83,8 @@ Done criteria:
 
 Goal: convert existing DevImg diagnostics into stable suggestion files without using an AI provider.
 
+Status: implemented for the `0.2.1` release as a required `devimg suggest --metadata-only` local-only workflow.
+
 Scope:
 
 - Add `devimg suggest --metadata-only`.

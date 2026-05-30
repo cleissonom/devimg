@@ -66,6 +66,23 @@ devimg agent task --agent codex --output ai_tasks/devimg-agent-task.md --force
 
 The command does not call OpenAI, Anthropic, or any external provider. It refuses to write task output to agent instruction paths such as `AGENTS.md`, `CLAUDE.md`, `.claude/**`, `.codex/**`, `.cursor/**`, and `.github/copilot-instructions.md`; use a task file instead.
 
+## Deterministic Suggestions
+
+Use `devimg suggest --metadata-only` when an agent needs diffable JSON suggestions derived from current DevImg diagnostics:
+
+```bash
+devimg suggest --metadata-only
+devimg suggest --metadata-only --output devimg-suggestions.json
+devimg suggest --metadata-only --markdown devimg-suggestions.md
+devimg suggest --metadata-only --output devimg-suggestions.json --markdown devimg-suggestions.md --force
+```
+
+The command writes `devimg-suggestions.json` under the configured project root by default. It supports `--config <path>`, refuses to overwrite existing JSON or Markdown output unless `--force` is passed, and does not rewrite `devimg.toml`.
+
+Suggestions include severity, affected source/output metadata when DevImg can prove it, diagnostic rationale, structured `suggested_config` data, and next commands. Treat suggestions as review inputs for explicit source or config changes, not as permission to hand-edit generated variants, manifests, reports, helper exports, or review artifacts.
+
+`suggest --metadata-only` is local-only. It does not call OpenAI, Anthropic, or any external provider, and it must not print or persist `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
+
 ## Generated Instructions
 
 Use `devimg agent init` when a project does not already have image-pipeline agent guidance:

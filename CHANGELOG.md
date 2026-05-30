@@ -4,6 +4,15 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 ## Unreleased
 
+## 0.2.1
+
+- Added `devimg suggest --metadata-only` for deterministic local suggestion files generated from existing DevImg diagnostics.
+- Added stable suggestion JSON output, optional Markdown summaries, overwrite protection through `--force`, and structured `suggested_config` guidance for humans and coding agents.
+- Documented deterministic suggestions, local-only behavior, and the deferred status of provider-backed AI suggestions.
+- Updated public release, Action, and distribution references for `v0.2.1`.
+
+## 0.2.0
+
 - Bumped the workspace to `0.2.0` and added `devimg agent task` for local-only Markdown task contracts for Codex, Claude Code, and generic agents.
 - Added `agent task --agent codex|claude-code|generic`, stdout output by default, `--output <path>`, overwrite protection through `--force`, and protection for existing agent instruction paths.
 - Documented the `agent task` workflow, generated task context, safe output handling, and the deferred status of provider-backed AI features.
