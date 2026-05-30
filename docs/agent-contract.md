@@ -65,7 +65,9 @@ devimg ai consent --ai-provider anthropic --model anthropic-dry-run-model --dry-
 
 `devimg ai consent` writes deterministic consent metadata only and performs no OpenAI or Anthropic calls. Dry runs do not require API keys; non-dry-run previews validate `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` exists and still avoid network calls. Do not print or persist key values.
 
-`devimg review --ai` is provider-backed in `0.2.4` for OpenAI only. It requires explicit `--ai-provider openai`, explicit `--model`, and `OPENAI_API_KEY` unless `--dry-run` is passed. Metadata-only is the default. Do not pass `--include-images` unless a human has explicitly approved sending generated image bytes. Treat AI observations as advisory review input, not as automatic edit instructions.
+`devimg review --ai` is provider-backed for OpenAI only. It requires explicit `--ai-provider openai`, explicit `--model`, and `OPENAI_API_KEY` unless `--dry-run` is passed. Metadata-only is the default. Do not pass `--include-images` unless a human has explicitly approved sending generated image bytes. Treat AI observations as advisory review input, not as automatic edit instructions.
+
+`devimg alt` writes reviewable alt-text draft artifacts. Metadata-only is the default and produces placeholder records without API keys or provider calls. Real `devimg alt --include-images` calls are OpenAI-only in `0.2.5`, require `OPENAI_API_KEY`, and must not be run without explicit approval to send selected image bytes. DevImg never inserts alt text into application code.
 
 Run this loop when image sources, config, generated variants, manifests, reports, or helper files may change:
 

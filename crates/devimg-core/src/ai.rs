@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -104,6 +104,10 @@ pub trait AiProviderClient {
 
 pub trait AiReviewProviderClient {
     fn review(&self, request: &AiReviewRequest) -> Result<AiReviewProviderPayload>;
+}
+
+pub trait AiAltProviderClient {
+    fn alt(&self, request: &AiAltRequest) -> Result<AiAltProviderPayload>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,6 +266,148 @@ pub struct AiReviewSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiAltOptions {
+    pub provider: AiProvider,
+    pub model: String,
+    pub command: String,
+    pub config_path: PathBuf,
+    pub manifest_path: PathBuf,
+    pub project_root: PathBuf,
+    pub dry_run: bool,
+    pub include_images: bool,
+    pub image_detail: String,
+    pub max_images: usize,
+    pub output_path: Option<PathBuf>,
+    pub markdown_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiAltRequest {
+    pub schema_version: u32,
+    pub provider: AiProvider,
+    pub model: String,
+    pub command: String,
+    pub config_path: String,
+    pub manifest_path: String,
+    pub project_root: String,
+    pub mode: String,
+    pub dry_run: bool,
+    pub paths_included: bool,
+    pub image_bytes_included: bool,
+    pub image_detail: String,
+    pub max_images: usize,
+    pub output_path: Option<String>,
+    pub markdown_path: Option<String>,
+    pub manifest_summary: AiAltManifestSummary,
+    pub sources: Vec<AiAltSource>,
+    pub selected_images: Vec<AiAltImageInput>,
+    pub skipped_image_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiAltManifestSummary {
+    pub config_path: String,
+    pub config_hash: String,
+    pub source_count: usize,
+    pub output_count: usize,
+    pub source_bytes: u64,
+    pub output_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiAltSource {
+    pub source_path: String,
+    pub source_hash: String,
+    pub source_width: u32,
+    pub source_height: u32,
+    pub source_bytes: u64,
+    pub representative_image_path: String,
+    pub representative_image_width: u32,
+    pub representative_image_height: u32,
+    pub representative_image_format: String,
+    pub image_bytes_included: bool,
+    pub image_detail: Option<String>,
+    pub variants: Vec<AiAltVariant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiAltVariant {
+    pub output_path: String,
+    pub preset: String,
+    pub fit: String,
+    pub width: u32,
+    pub height: u32,
+    pub format: String,
+    pub bytes: u64,
+    pub hash: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiAltImageInput {
+    pub source_path: String,
+    pub image_path: String,
+    pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub bytes: u64,
+    pub hash: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct AiAltProviderPayload {
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub drafts: Vec<AiAltDraft>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct AiAltDraft {
+    pub source_path: String,
+    pub representative_image_path: String,
+    pub candidate_alt_text: String,
+    pub review_note: String,
+    pub confidence: String,
+    pub image_category: String,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiAltReport {
+    pub schema_version: u32,
+    pub provider: AiProvider,
+    pub model: String,
+    pub command: String,
+    pub config_path: String,
+    pub manifest_path: String,
+    pub project_root: String,
+    pub mode: String,
+    pub dry_run: bool,
+    pub paths_included: bool,
+    pub image_bytes_included: bool,
+    pub image_detail: String,
+    pub max_images: usize,
+    pub output_path: Option<String>,
+    pub markdown_path: Option<String>,
+    pub provider_called: bool,
+    pub summary: AiAltReportSummary,
+    pub sources: Vec<AiAltSource>,
+    pub selected_images: Vec<AiAltImageInput>,
+    pub provider_summary: String,
+    pub drafts: Vec<AiAltDraft>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AiAltReportSummary {
+    pub source_count: usize,
+    pub output_count: usize,
+    pub selected_image_count: usize,
+    pub skipped_image_count: usize,
+    pub draft_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MockAiReviewProviderClient {
     provider: AiProvider,
     fail: bool,
@@ -312,6 +458,57 @@ impl AiReviewProviderClient for MockAiReviewProviderClient {
                     }]
                 })
                 .unwrap_or_default(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MockAiAltProviderClient {
+    provider: AiProvider,
+    fail: bool,
+}
+
+impl MockAiAltProviderClient {
+    pub fn new(provider: AiProvider) -> Self {
+        Self {
+            provider,
+            fail: false,
+        }
+    }
+
+    pub fn failing(provider: AiProvider) -> Self {
+        Self {
+            provider,
+            fail: true,
+        }
+    }
+}
+
+impl AiAltProviderClient for MockAiAltProviderClient {
+    fn alt(&self, request: &AiAltRequest) -> Result<AiAltProviderPayload> {
+        if self.fail {
+            return Err(crate::DevimgError::config(
+                &request.config_path,
+                "mock AI alt provider failure",
+            ));
+        }
+
+        Ok(AiAltProviderPayload {
+            summary: format!("mock {} alt text", self.provider.label()),
+            drafts: request
+                .sources
+                .iter()
+                .map(|source| AiAltDraft {
+                    source_path: source.source_path.clone(),
+                    representative_image_path: source.representative_image_path.clone(),
+                    candidate_alt_text: "Mock draft alt text for provider boundary tests."
+                        .to_string(),
+                    review_note: "Review before using in application code.".to_string(),
+                    confidence: "medium".to_string(),
+                    image_category: "unknown".to_string(),
+                    warnings: vec!["needs-human-review".to_string()],
+                })
+                .collect(),
         })
     }
 }
@@ -613,6 +810,235 @@ pub fn render_ai_review_markdown(report: &AiReviewReport) -> String {
     out
 }
 
+pub fn build_ai_alt_request(manifest: &Manifest, options: &AiAltOptions) -> AiAltRequest {
+    let max_images = options.max_images.max(1);
+    let image_detail = options.image_detail.clone();
+    let mut grouped = BTreeMap::<String, AiAltSourceBuilder>::new();
+    for output in &manifest.outputs {
+        let source = grouped
+            .entry(output.source_path.clone())
+            .or_insert_with(|| AiAltSourceBuilder {
+                source_path: output.source_path.clone(),
+                source_hash: output.source_hash.clone(),
+                source_width: output.source_width,
+                source_height: output.source_height,
+                source_bytes: output.source_bytes,
+                variants: Vec::new(),
+            });
+        source.variants.push(AiAltVariant {
+            output_path: output.output_path.clone(),
+            preset: output.preset.clone(),
+            fit: output.fit.clone(),
+            width: output.width,
+            height: output.height,
+            format: output.format.clone(),
+            bytes: output.bytes,
+            hash: output.hash.clone(),
+        });
+    }
+
+    let mut selected_images = Vec::new();
+    let mut sources = Vec::new();
+    for mut builder in grouped.into_values() {
+        builder.variants.sort_by(|left, right| {
+            left.preset
+                .cmp(&right.preset)
+                .then(left.width.cmp(&right.width))
+                .then(left.height.cmp(&right.height))
+                .then(left.format.cmp(&right.format))
+                .then(left.output_path.cmp(&right.output_path))
+        });
+        let representative = builder.representative_image();
+        let mut image_bytes_included = false;
+        let mut image_detail_for_source = None;
+        if options.include_images && selected_images.len() < max_images {
+            if let Some(image) = representative.as_image_input(&builder.source_path, &image_detail)
+            {
+                image_bytes_included = true;
+                image_detail_for_source = Some(image_detail.clone());
+                selected_images.push(image);
+            }
+        }
+
+        sources.push(AiAltSource {
+            source_path: builder.source_path,
+            source_hash: builder.source_hash,
+            source_width: builder.source_width,
+            source_height: builder.source_height,
+            source_bytes: builder.source_bytes,
+            representative_image_path: representative.path,
+            representative_image_width: representative.width,
+            representative_image_height: representative.height,
+            representative_image_format: representative.format,
+            image_bytes_included,
+            image_detail: image_detail_for_source,
+            variants: builder.variants,
+        });
+    }
+
+    let skipped_image_count = if options.include_images {
+        sources.len().saturating_sub(selected_images.len())
+    } else {
+        0
+    };
+    let mode = if options.include_images {
+        "include-images"
+    } else {
+        "metadata-only"
+    };
+
+    AiAltRequest {
+        schema_version: 1,
+        provider: options.provider,
+        model: options.model.clone(),
+        command: options.command.clone(),
+        config_path: display_project_path(&options.project_root, &options.config_path),
+        manifest_path: display_project_path(&options.project_root, &options.manifest_path),
+        project_root: display_path(&options.project_root),
+        mode: mode.to_string(),
+        dry_run: options.dry_run,
+        paths_included: true,
+        image_bytes_included: options.include_images,
+        image_detail,
+        max_images,
+        output_path: options
+            .output_path
+            .as_deref()
+            .map(|path| display_project_path(&options.project_root, path)),
+        markdown_path: options
+            .markdown_path
+            .as_deref()
+            .map(|path| display_project_path(&options.project_root, path)),
+        manifest_summary: AiAltManifestSummary {
+            config_path: manifest.config_path.clone(),
+            config_hash: manifest.config_hash.clone(),
+            source_count: manifest_source_count(manifest),
+            output_count: manifest.outputs.len(),
+            source_bytes: manifest.source_bytes_total(),
+            output_bytes: manifest.output_bytes_total(),
+        },
+        sources,
+        selected_images,
+        skipped_image_count,
+    }
+}
+
+pub fn build_ai_alt_report(
+    request: &AiAltRequest,
+    payload: AiAltProviderPayload,
+    provider_called: bool,
+) -> AiAltReport {
+    let drafts = normalize_ai_alt_drafts(request, payload.drafts);
+    AiAltReport {
+        schema_version: request.schema_version,
+        provider: request.provider,
+        model: request.model.clone(),
+        command: request.command.clone(),
+        config_path: request.config_path.clone(),
+        manifest_path: request.manifest_path.clone(),
+        project_root: request.project_root.clone(),
+        mode: request.mode.clone(),
+        dry_run: request.dry_run,
+        paths_included: request.paths_included,
+        image_bytes_included: request.image_bytes_included,
+        image_detail: request.image_detail.clone(),
+        max_images: request.max_images,
+        output_path: request.output_path.clone(),
+        markdown_path: request.markdown_path.clone(),
+        provider_called,
+        summary: AiAltReportSummary {
+            source_count: request.sources.len(),
+            output_count: request.manifest_summary.output_count,
+            selected_image_count: request.selected_images.len(),
+            skipped_image_count: request.skipped_image_count,
+            draft_count: drafts.len(),
+        },
+        sources: request.sources.clone(),
+        selected_images: request.selected_images.clone(),
+        provider_summary: payload.summary,
+        drafts,
+    }
+}
+
+pub fn build_ai_alt_placeholder_report(request: &AiAltRequest) -> AiAltReport {
+    let drafts = request
+        .sources
+        .iter()
+        .map(|source| AiAltDraft {
+            source_path: source.source_path.clone(),
+            representative_image_path: source.representative_image_path.clone(),
+            candidate_alt_text: String::new(),
+            review_note: "Metadata-only placeholder; inspect the image and write human-reviewed alt text before application use.".to_string(),
+            confidence: "low".to_string(),
+            image_category: "unknown".to_string(),
+            warnings: vec!["needs-human-review".to_string()],
+        })
+        .collect();
+    build_ai_alt_report(
+        request,
+        AiAltProviderPayload {
+            summary: "Metadata-only placeholder; no provider call was made.".to_string(),
+            drafts,
+        },
+        false,
+    )
+}
+
+pub fn ai_alt_report_to_json(report: &AiAltReport) -> String {
+    serde_json::to_string_pretty(report).expect("AI alt report serialization cannot fail") + "\n"
+}
+
+pub fn render_ai_alt_markdown(report: &AiAltReport) -> String {
+    let mut out = String::new();
+    out.push_str("# DevImg Alt-Text Drafts\n\n");
+    out.push_str("Alt text is draft content and must be reviewed by a human before application use. DevImg does not insert this text into application code.\n\n");
+    out.push_str("## Summary\n\n");
+    out.push_str(&format!("- Provider: `{}`\n", report.provider.label()));
+    out.push_str(&format!("- Model: `{}`\n", report.model));
+    out.push_str(&format!("- Mode: `{}`\n", report.mode));
+    out.push_str(&format!("- Dry run: `{}`\n", report.dry_run));
+    out.push_str(&format!(
+        "- Provider called: `{}`\n",
+        report.provider_called
+    ));
+    out.push_str(&format!("- Manifest: `{}`\n", report.manifest_path));
+    out.push_str(&format!("- Sources: `{}`\n", report.summary.source_count));
+    out.push_str(&format!(
+        "- Image inputs selected: `{}`\n",
+        report.summary.selected_image_count
+    ));
+    out.push_str(&format!("- Drafts: `{}`\n\n", report.summary.draft_count));
+
+    out.push_str("## Drafts\n\n");
+    if report.drafts.is_empty() {
+        out.push_str("No alt-text drafts.\n");
+    } else {
+        for draft in &report.drafts {
+            out.push_str(&format!("### {}\n\n", draft.source_path));
+            out.push_str(&format!(
+                "- Representative image: `{}`\n",
+                draft.representative_image_path
+            ));
+            out.push_str(&format!("- Category: `{}`\n", draft.image_category));
+            out.push_str(&format!("- Confidence: `{}`\n", draft.confidence));
+            out.push_str(&format!(
+                "- Candidate alt text: {}\n",
+                if draft.candidate_alt_text.is_empty() {
+                    "_No draft generated in metadata-only mode._"
+                } else {
+                    draft.candidate_alt_text.as_str()
+                }
+            ));
+            out.push_str(&format!("- Review note: {}\n", draft.review_note));
+            if !draft.warnings.is_empty() {
+                out.push_str(&format!("- Warnings: `{}`\n", draft.warnings.join("`, `")));
+            }
+            out.push('\n');
+        }
+    }
+    out
+}
+
 pub fn ai_image_mime_type(format: &str) -> Option<&'static str> {
     match format.to_ascii_lowercase().as_str() {
         "png" => Some("image/png"),
@@ -620,6 +1046,90 @@ pub fn ai_image_mime_type(format: &str) -> Option<&'static str> {
         "webp" => Some("image/webp"),
         "gif" => Some("image/gif"),
         _ => None,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AiAltSourceBuilder {
+    source_path: String,
+    source_hash: String,
+    source_width: u32,
+    source_height: u32,
+    source_bytes: u64,
+    variants: Vec<AiAltVariant>,
+}
+
+impl AiAltSourceBuilder {
+    fn representative_image(&self) -> AiAltRepresentativeImage {
+        let source_format = path_extension(&self.source_path);
+        if ai_image_mime_type(&source_format).is_some() {
+            return AiAltRepresentativeImage {
+                path: self.source_path.clone(),
+                width: self.source_width,
+                height: self.source_height,
+                format: source_format,
+                bytes: self.source_bytes,
+                hash: self.source_hash.clone(),
+            };
+        }
+
+        self.variants
+            .iter()
+            .filter(|variant| ai_image_mime_type(&variant.format).is_some())
+            .max_by_key(|variant| u64::from(variant.width) * u64::from(variant.height))
+            .map(|variant| AiAltRepresentativeImage {
+                path: variant.output_path.clone(),
+                width: variant.width,
+                height: variant.height,
+                format: variant.format.clone(),
+                bytes: variant.bytes,
+                hash: variant.hash.clone(),
+            })
+            .or_else(|| {
+                self.variants
+                    .first()
+                    .map(|variant| AiAltRepresentativeImage {
+                        path: variant.output_path.clone(),
+                        width: variant.width,
+                        height: variant.height,
+                        format: variant.format.clone(),
+                        bytes: variant.bytes,
+                        hash: variant.hash.clone(),
+                    })
+            })
+            .unwrap_or_else(|| AiAltRepresentativeImage {
+                path: self.source_path.clone(),
+                width: self.source_width,
+                height: self.source_height,
+                format: source_format,
+                bytes: self.source_bytes,
+                hash: self.source_hash.clone(),
+            })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AiAltRepresentativeImage {
+    path: String,
+    width: u32,
+    height: u32,
+    format: String,
+    bytes: u64,
+    hash: String,
+}
+
+impl AiAltRepresentativeImage {
+    fn as_image_input(&self, source_path: &str, detail: &str) -> Option<AiAltImageInput> {
+        ai_image_mime_type(&self.format).map(|mime_type| AiAltImageInput {
+            source_path: source_path.to_string(),
+            image_path: self.path.clone(),
+            mime_type: mime_type.to_string(),
+            width: self.width,
+            height: self.height,
+            bytes: self.bytes,
+            hash: self.hash.clone(),
+            detail: detail.to_string(),
+        })
     }
 }
 
@@ -653,6 +1163,14 @@ fn manifest_source_count(manifest: &Manifest) -> usize {
         .len()
 }
 
+fn path_extension(path: &str) -> String {
+    Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("unknown")
+        .to_ascii_lowercase()
+}
+
 fn normalize_ai_review_observation(mut observation: AiReviewObservation) -> AiReviewObservation {
     observation.severity = "advisory".to_string();
     observation.category = normalize_observation_category(&observation.category).to_string();
@@ -671,15 +1189,97 @@ fn normalize_observation_category(category: &str) -> &'static str {
     }
 }
 
+fn normalize_ai_alt_drafts(request: &AiAltRequest, drafts: Vec<AiAltDraft>) -> Vec<AiAltDraft> {
+    let mut by_source = drafts
+        .into_iter()
+        .map(|mut draft| {
+            draft.confidence = normalize_alt_confidence(&draft.confidence).to_string();
+            draft.image_category = normalize_alt_category(&draft.image_category).to_string();
+            draft.warnings = normalize_alt_warnings(draft.warnings);
+            draft
+        })
+        .map(|draft| (draft.source_path.clone(), draft))
+        .collect::<BTreeMap<_, _>>();
+
+    request
+        .sources
+        .iter()
+        .map(|source| {
+            let mut draft = by_source
+                .remove(&source.source_path)
+                .unwrap_or_else(|| AiAltDraft {
+                    source_path: source.source_path.clone(),
+                    representative_image_path: source.representative_image_path.clone(),
+                    candidate_alt_text: String::new(),
+                    review_note: "Provider did not return a draft for this source; write human-reviewed alt text manually.".to_string(),
+                    confidence: "low".to_string(),
+                    image_category: "unknown".to_string(),
+                    warnings: vec!["needs-human-review".to_string()],
+                });
+            draft.source_path = source.source_path.clone();
+            draft.representative_image_path = source.representative_image_path.clone();
+            draft
+        })
+        .collect()
+}
+
+fn normalize_alt_confidence(confidence: &str) -> &'static str {
+    match confidence {
+        "low" => "low",
+        "medium" => "medium",
+        "high" => "high",
+        _ => "low",
+    }
+}
+
+fn normalize_alt_category(category: &str) -> &'static str {
+    match category {
+        "content-photo" => "content-photo",
+        "screenshot" => "screenshot",
+        "logo" => "logo",
+        "illustration" => "illustration",
+        "diagram" => "diagram",
+        "icon" => "icon",
+        "decorative" => "decorative",
+        "text-heavy" => "text-heavy",
+        "unknown" => "unknown",
+        _ => "unknown",
+    }
+}
+
+fn normalize_alt_warnings(warnings: Vec<String>) -> Vec<String> {
+    let mut normalized = warnings
+        .into_iter()
+        .map(|warning| match warning.as_str() {
+            "decorative" => "decorative",
+            "text-heavy" => "text-heavy",
+            "logo" => "logo",
+            "screenshot" => "screenshot",
+            "uncertain-description" => "uncertain-description",
+            "needs-human-review" => "needs-human-review",
+            _ => "needs-human-review",
+        })
+        .map(ToString::to_string)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if normalized.is_empty() {
+        normalized.push("needs-human-review".to_string());
+    }
+    normalized
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use super::{
-        ai_consent_preview_to_json, ai_image_mime_type, ai_review_report_to_json,
-        build_ai_review_dry_run_report, build_ai_review_report, build_ai_review_request,
-        render_ai_review_markdown, AiConsentPreview, AiGeneratedOutput, AiProvider,
-        AiProviderClient, AiReviewOptions, AiReviewProviderClient, AiSelectedFile,
+        ai_alt_report_to_json, ai_consent_preview_to_json, ai_image_mime_type,
+        ai_review_report_to_json, build_ai_alt_placeholder_report, build_ai_alt_report,
+        build_ai_alt_request, build_ai_review_dry_run_report, build_ai_review_report,
+        build_ai_review_request, render_ai_alt_markdown, render_ai_review_markdown, AiAltOptions,
+        AiAltProviderClient, AiConsentPreview, AiGeneratedOutput, AiProvider, AiProviderClient,
+        AiReviewOptions, AiReviewProviderClient, AiSelectedFile, MockAiAltProviderClient,
         MockAiProviderClient, MockAiReviewProviderClient,
     };
     use crate::manifest::{Manifest, ManifestOutput};
@@ -892,6 +1492,117 @@ mod tests {
         assert!(error
             .to_string()
             .contains("mock AI review provider failure"));
+    }
+
+    #[test]
+    fn ai_alt_request_groups_sources_and_selects_representative_images() {
+        let manifest = sample_manifest();
+        let request = build_ai_alt_request(
+            &manifest,
+            &AiAltOptions {
+                provider: AiProvider::Openai,
+                model: "alt-model".to_string(),
+                command: "devimg alt".to_string(),
+                config_path: PathBuf::from("/repo/devimg.toml"),
+                manifest_path: PathBuf::from("/repo/public/images/devimg-manifest.json"),
+                project_root: PathBuf::from("/repo"),
+                dry_run: true,
+                include_images: true,
+                image_detail: "low".to_string(),
+                max_images: 1,
+                output_path: Some(PathBuf::from("/repo/devimg-alt.json")),
+                markdown_path: Some(PathBuf::from("/tmp/devimg-alt.md")),
+            },
+        );
+
+        assert_eq!(request.provider, AiProvider::Openai);
+        assert_eq!(request.mode, "include-images");
+        assert_eq!(request.config_path, "devimg.toml");
+        assert_eq!(request.manifest_path, "public/images/devimg-manifest.json");
+        assert_eq!(request.output_path.as_deref(), Some("devimg-alt.json"));
+        assert_eq!(request.markdown_path.as_deref(), Some("/tmp/devimg-alt.md"));
+        assert_eq!(request.sources.len(), 1);
+        assert_eq!(request.sources[0].variants.len(), 2);
+        assert_eq!(
+            request.sources[0].representative_image_path,
+            "assets/images/sample.png"
+        );
+        assert!(request.sources[0].image_bytes_included);
+        assert_eq!(request.selected_images.len(), 1);
+        assert_eq!(request.selected_images[0].mime_type, "image/png");
+        assert_eq!(request.skipped_image_count, 0);
+    }
+
+    #[test]
+    fn ai_alt_placeholder_json_and_markdown_are_timestamp_free() {
+        let manifest = sample_manifest();
+        let request = build_ai_alt_request(
+            &manifest,
+            &AiAltOptions {
+                provider: AiProvider::Openai,
+                model: "dry-run-model".to_string(),
+                command: "devimg alt".to_string(),
+                config_path: PathBuf::from("devimg.toml"),
+                manifest_path: PathBuf::from("public/images/devimg-manifest.json"),
+                project_root: PathBuf::from("."),
+                dry_run: true,
+                include_images: false,
+                image_detail: "low".to_string(),
+                max_images: 8,
+                output_path: None,
+                markdown_path: None,
+            },
+        );
+        let report = build_ai_alt_placeholder_report(&request);
+        let json = ai_alt_report_to_json(&report);
+        let markdown = render_ai_alt_markdown(&report);
+
+        assert!(json.contains("\"provider\": \"openai\""));
+        assert!(json.contains("\"provider_called\": false"));
+        assert!(json.contains("\"candidate_alt_text\": \"\""));
+        assert!(!json.contains("generated_at"));
+        assert!(!json.contains("timestamp"));
+        assert!(markdown.contains("# DevImg Alt-Text Drafts"));
+        assert!(markdown.contains("Provider called: `false`"));
+        assert!(markdown.contains("_No draft generated in metadata-only mode._"));
+    }
+
+    #[test]
+    fn mock_ai_alt_provider_returns_stable_payload_and_failure() {
+        let manifest = sample_manifest();
+        let request = build_ai_alt_request(
+            &manifest,
+            &AiAltOptions {
+                provider: AiProvider::Anthropic,
+                model: "mock-model".to_string(),
+                command: "devimg alt".to_string(),
+                config_path: PathBuf::from("devimg.toml"),
+                manifest_path: PathBuf::from("public/images/devimg-manifest.json"),
+                project_root: PathBuf::from("."),
+                dry_run: false,
+                include_images: false,
+                image_detail: "low".to_string(),
+                max_images: 8,
+                output_path: None,
+                markdown_path: None,
+            },
+        );
+
+        let payload = MockAiAltProviderClient::new(AiProvider::Anthropic)
+            .alt(&request)
+            .expect("mock provider succeeds");
+        let report = build_ai_alt_report(&request, payload, true);
+
+        assert!(report.provider_called);
+        assert_eq!(report.provider_summary, "mock anthropic alt text");
+        assert_eq!(report.drafts.len(), 1);
+        assert_eq!(report.drafts[0].confidence, "medium");
+        assert_eq!(report.drafts[0].warnings, vec!["needs-human-review"]);
+
+        let error = MockAiAltProviderClient::failing(AiProvider::Openai)
+            .alt(&request)
+            .expect_err("mock provider fails");
+        assert!(error.to_string().contains("mock AI alt provider failure"));
     }
 
     #[test]

@@ -264,6 +264,8 @@ Done criteria:
 
 Goal: generate reviewable alt-text drafts for static content images.
 
+Status: implemented for the `0.2.5` release as OpenAI-only image-backed alt-text drafts plus local metadata-only placeholders. Anthropic real alt-text calls remain deferred.
+
 Scope:
 
 - Add `devimg alt`.
@@ -271,16 +273,20 @@ Scope:
 - Support `--model <model>`.
 - Require `--include-images` for image-byte alt-text generation.
 - Support `--metadata-only` for placeholder records without image bytes.
+- Use metadata-only placeholders by default without provider calls or API keys.
 - Generate `devimg-alt.json`.
 - Support `--markdown <path>`.
 - Include source path, candidate alt text, review note, confidence, image category, and warnings.
 - Warn for decorative images, text-heavy images, logos, screenshots, and uncertain descriptions.
 - Avoid inserting alt text into application code.
+- Real provider calls are OpenAI-only in this release; Anthropic is mocked for tests and deferred for real generation.
 
 Tests:
 
 - mocked OpenAI alt-text generation works.
 - mocked Anthropic alt-text generation works.
+- OpenAI include-images generation requires `OPENAI_API_KEY`.
+- Anthropic include-images generation is rejected clearly.
 - output schema is stable.
 - overwrite protection works.
 - metadata-only mode does not require image upload.

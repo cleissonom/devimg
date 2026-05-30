@@ -6,23 +6,25 @@ use std::path::{Path, PathBuf};
 use base64::Engine as _;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use devimg_core::{
-    ai_consent_preview_to_json, ai_review_report_to_json, build_ai_consent_preview,
-    build_ai_review_dry_run_report, build_ai_review_report, build_ai_review_request,
-    check_with_options, compare_manifests, doctor, doctor_report_to_json, inspect_image,
-    load_config, manifest_compare_to_json, manifest_export_to_json,
-    manifest_export_to_typescript_with_options, optimize, read_manifest, render_ai_review_markdown,
-    render_doctor_report, render_manifest_compare_report, render_manifest_report,
-    render_manifest_review, render_run_report, render_suggestion_markdown, suggest,
-    suggestion_report_to_json, AiConsentOptions, AiProvider, AiReviewOptions,
-    AiReviewProviderPayload, AiReviewRequest, CheckOptions, DevimgError,
-    DoctorManifestExportFormat, DoctorManifestExportOptions, DoctorOptions, ManifestCompareOptions,
-    ManifestExportOptions, ManifestReviewOptions, ManifestTypescriptOptions, OptimizeOptions,
-    SuggestOptions, SuggestionItem, SuggestionReport,
+    ai_alt_report_to_json, ai_consent_preview_to_json, ai_review_report_to_json,
+    build_ai_alt_placeholder_report, build_ai_alt_report, build_ai_alt_request,
+    build_ai_consent_preview, build_ai_review_dry_run_report, build_ai_review_report,
+    build_ai_review_request, check_with_options, compare_manifests, doctor, doctor_report_to_json,
+    inspect_image, load_config, manifest_compare_to_json, manifest_export_to_json,
+    manifest_export_to_typescript_with_options, optimize, read_manifest, render_ai_alt_markdown,
+    render_ai_review_markdown, render_doctor_report, render_manifest_compare_report,
+    render_manifest_report, render_manifest_review, render_run_report, render_suggestion_markdown,
+    suggest, suggestion_report_to_json, AiAltOptions, AiAltProviderPayload, AiAltRequest,
+    AiConsentOptions, AiProvider, AiReviewOptions, AiReviewProviderPayload, AiReviewRequest,
+    CheckOptions, DevimgError, DoctorManifestExportFormat, DoctorManifestExportOptions,
+    DoctorOptions, ManifestCompareOptions, ManifestExportOptions, ManifestReviewOptions,
+    ManifestTypescriptOptions, OptimizeOptions, SuggestOptions, SuggestionItem, SuggestionReport,
 };
 use serde_json::{json, Value};
 
 const DEFAULT_CONFIG_PATH: &str = "devimg.toml";
 const DEFAULT_AI_REVIEW_OUTPUT: &str = "devimg-ai-review.json";
+const DEFAULT_AI_ALT_OUTPUT: &str = "devimg-alt.json";
 const DEFAULT_AI_REVIEW_MAX_IMAGES: usize = 8;
 
 fn main() {
@@ -85,6 +87,7 @@ where
         Command::Compare(args) => command_compare(args),
         Command::Inspect(args) => command_inspect(args),
         Command::Suggest(args) => command_suggest(args),
+        Command::Alt(args) => command_alt(args),
         Command::Manifest(args) => command_manifest(args),
         Command::Agent(args) => command_agent(args),
         Command::Ai(args) => command_ai(args),
@@ -116,6 +119,7 @@ enum Command {
     Compare(CompareArgs),
     Inspect(InspectArgs),
     Suggest(SuggestArgs),
+    Alt(AltArgs),
     Manifest(ManifestArgs),
     Agent(AgentArgs),
     Ai(AiArgs),
@@ -250,6 +254,32 @@ struct SuggestArgs {
     markdown: Option<PathBuf>,
     #[arg(long)]
     force: bool,
+}
+
+#[derive(Debug, Args)]
+struct AltArgs {
+    #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
+    config: PathBuf,
+    #[arg(long = "ai-provider", value_enum)]
+    ai_provider: AiProviderArg,
+    #[arg(long)]
+    model: String,
+    #[arg(long)]
+    metadata_only: bool,
+    #[arg(long)]
+    include_images: bool,
+    #[arg(long)]
+    dry_run: bool,
+    #[arg(long)]
+    output: Option<PathBuf>,
+    #[arg(long)]
+    markdown: Option<PathBuf>,
+    #[arg(long)]
+    force: bool,
+    #[arg(long, default_value_t = DEFAULT_AI_REVIEW_MAX_IMAGES)]
+    max_images: usize,
+    #[arg(long, value_enum, default_value = "low")]
+    image_detail: AiImageDetailArg,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -598,7 +628,7 @@ fn command_review_ai(args: ReviewArgs) -> Result<(), CliError> {
     if provider != AiProvider::Openai {
         return Err(CliError::Core(DevimgError::config(
             &args.manifest,
-            "devimg review --ai supports openai only in 0.2.4; Anthropic AI review is deferred",
+            "devimg review --ai supports openai only in this release; Anthropic AI review is deferred",
         )));
     }
     let model = args.model.ok_or_else(|| {
@@ -813,6 +843,102 @@ fn command_suggest(args: SuggestArgs) -> Result<(), CliError> {
     }
 }
 
+fn command_alt(args: AltArgs) -> Result<(), CliError> {
+    if args.model.trim().is_empty() {
+        return Err(CliError::Core(DevimgError::config(
+            &args.config,
+            "--model cannot be empty",
+        )));
+    }
+    if args.metadata_only && args.include_images {
+        return Err(CliError::Core(DevimgError::config(
+            &args.config,
+            "--metadata-only cannot be combined with --include-images",
+        )));
+    }
+    if args.max_images == 0 {
+        return Err(CliError::Core(DevimgError::config(
+            &args.config,
+            "--max-images must be greater than 0",
+        )));
+    }
+
+    let provider = args.ai_provider.into_core();
+    if args.include_images && provider != AiProvider::Openai {
+        return Err(CliError::Core(DevimgError::config(
+            &args.config,
+            "devimg alt supports OpenAI image-backed alt-text generation only in 0.2.5; Anthropic alt text is deferred",
+        )));
+    }
+
+    let config = load_config(&args.config)?;
+    let manifest_path = config.project.root.join(&config.project.manifest);
+    let manifest = read_manifest(&manifest_path)?;
+    let output = args
+        .output
+        .clone()
+        .unwrap_or_else(|| config.project.root.join(DEFAULT_AI_ALT_OUTPUT));
+    validate_distinct_alt_outputs(&args.config, &output, args.markdown.as_deref())?;
+    let mut outputs = vec![output.clone()];
+    if let Some(markdown) = &args.markdown {
+        outputs.push(markdown.clone());
+    }
+    for output_path in &outputs {
+        if output_path.exists() && !args.force {
+            return Err(CliError::Core(DevimgError::UnsafeOverwrite {
+                path: output_path.clone(),
+            }));
+        }
+    }
+
+    let request = build_ai_alt_request(
+        &manifest,
+        &AiAltOptions {
+            provider,
+            model: args.model.clone(),
+            command: "devimg alt".to_string(),
+            config_path: args.config.clone(),
+            manifest_path: manifest_path.clone(),
+            project_root: config.project.root.clone(),
+            dry_run: args.dry_run,
+            include_images: args.include_images,
+            image_detail: args.image_detail.label().to_string(),
+            max_images: args.max_images,
+            output_path: Some(output.clone()),
+            markdown_path: args.markdown.clone(),
+        },
+    );
+    if args.include_images && request.selected_images.is_empty() && !request.sources.is_empty() {
+        return Err(CliError::Core(DevimgError::config(
+            &args.config,
+            "no OpenAI-supported source or generated image inputs were found; supported formats are png, jpeg, webp, and non-animated gif",
+        )));
+    }
+
+    let report = if args.include_images && !args.dry_run {
+        let key = read_ai_provider_key(
+            &args.config,
+            provider,
+            std::slice::from_ref(&config.project.root),
+            "devimg alt",
+        )?;
+        let payload = call_openai_alt(&request, &config.project.root, &key)?;
+        build_ai_alt_report(&request, payload, true)
+    } else {
+        build_ai_alt_placeholder_report(&request)
+    };
+
+    write_text_file(&output, &ai_alt_report_to_json(&report))?;
+    println!("Created {}", output.display());
+
+    if let Some(markdown) = args.markdown {
+        write_text_file(&markdown, &render_ai_alt_markdown(&report))?;
+        println!("Created {}", markdown.display());
+    }
+
+    Ok(())
+}
+
 fn blocking_suggestion_count(report: &SuggestionReport, threshold: SuggestFailSeverity) -> usize {
     report
         .items
@@ -968,6 +1094,22 @@ fn validate_distinct_review_outputs(
                     "--output and --markdown must use different paths",
                 )));
             }
+        }
+    }
+    Ok(())
+}
+
+fn validate_distinct_alt_outputs(
+    config_path: &Path,
+    output: &Path,
+    markdown: Option<&Path>,
+) -> Result<(), CliError> {
+    if let Some(markdown) = markdown {
+        if comparable_output_path(output)? == comparable_output_path(markdown)? {
+            return Err(CliError::Core(DevimgError::config(
+                config_path,
+                "--output and --markdown must use different paths",
+            )));
         }
     }
     Ok(())
@@ -1156,8 +1298,107 @@ fn build_openai_review_body(
     }))
 }
 
+fn call_openai_alt(
+    request: &AiAltRequest,
+    project_root: &Path,
+    api_key: &str,
+) -> Result<AiAltProviderPayload, CliError> {
+    let body = build_openai_alt_body(request, project_root)?;
+    let client = reqwest::blocking::Client::builder().build().map_err(|_| {
+        CliError::Core(DevimgError::config(
+            &request.config_path,
+            "failed to construct OpenAI HTTP client",
+        ))
+    })?;
+    let response = client
+        .post("https://api.openai.com/v1/responses")
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .map_err(|_| {
+            CliError::Core(DevimgError::config(
+                &request.config_path,
+                "OpenAI Responses API request failed before a response was received",
+            ))
+        })?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(CliError::Core(DevimgError::config(
+            &request.config_path,
+            format!(
+                "OpenAI Responses API request failed with HTTP status {}",
+                status.as_u16()
+            ),
+        )));
+    }
+    let value: Value = response.json().map_err(|_| {
+        CliError::Core(DevimgError::config(
+            &request.config_path,
+            "OpenAI response was not valid JSON",
+        ))
+    })?;
+    let output_text = extract_openai_output_text(&value).ok_or_else(|| {
+        CliError::Core(DevimgError::config(
+            &request.config_path,
+            "OpenAI response did not include alt-text JSON",
+        ))
+    })?;
+    serde_json::from_str::<AiAltProviderPayload>(output_text.trim()).map_err(|_| {
+        CliError::Core(DevimgError::config(
+            &request.config_path,
+            "OpenAI response did not match the DevImg alt-text schema",
+        ))
+    })
+}
+
+fn build_openai_alt_body(request: &AiAltRequest, project_root: &Path) -> Result<Value, CliError> {
+    let mut user_content = vec![json!({
+        "type": "input_text",
+        "text": openai_alt_user_text(request),
+    })];
+    if request.image_bytes_included {
+        for image in &request.selected_images {
+            let image_path = project_root.join(&image.image_path);
+            let bytes =
+                fs::read(&image_path).map_err(|source| DevimgError::io(&image_path, source))?;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+            user_content.push(json!({
+                "type": "input_image",
+                "image_url": format!("data:{};base64,{}", image.mime_type, encoded),
+                "detail": openai_image_detail(&image.detail),
+            }));
+        }
+    }
+
+    Ok(json!({
+        "model": request.model,
+        "input": [
+            {
+                "role": "developer",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": openai_alt_developer_text(),
+                    }
+                ]
+            },
+            {
+                "role": "user",
+                "content": user_content
+            }
+        ],
+        "text": {
+            "format": openai_alt_text_format()
+        }
+    }))
+}
+
 fn openai_review_developer_text() -> &'static str {
     "You are reviewing DevImg-generated web image variants. Return JSON that matches the supplied schema. Treat every observation as advisory. Do not suggest editing generated image files by hand. Do not include secrets, API keys, data URLs, or raw image bytes. Focus only on crop risk, readability risk, excessive padding, low-resolution source, format-quality concern, and accessibility note."
+}
+
+fn openai_alt_developer_text() -> &'static str {
+    "You draft concise web image alt text from DevImg metadata and image inputs. Return JSON that matches the supplied schema. Draft one record per source_path. Alt text is draft content for human review only. Do not include secrets, API keys, data URLs, raw image bytes, markdown, file names as descriptions, or instructions to edit application code. Prefer empty candidate_alt_text for decorative images. Warn for decorative images, text-heavy images, logos, screenshots, and uncertain descriptions."
 }
 
 fn openai_image_detail(detail: &str) -> &str {
@@ -1173,6 +1414,14 @@ fn openai_review_user_text(request: &AiReviewRequest) -> String {
         serde_json::to_string_pretty(request).expect("AI review request serialization cannot fail");
     format!(
         "Review this DevImg manifest metadata and the optional selected image inputs. Return JSON only. Metadata:\n{metadata}"
+    )
+}
+
+fn openai_alt_user_text(request: &AiAltRequest) -> String {
+    let metadata =
+        serde_json::to_string_pretty(request).expect("AI alt request serialization cannot fail");
+    format!(
+        "Draft alt text for these DevImg source images using the metadata and selected image inputs. Return JSON only. Metadata:\n{metadata}"
     )
 }
 
@@ -1226,6 +1475,76 @@ fn openai_review_text_format() -> Value {
                 }
             },
             "required": ["summary", "observations"]
+        }
+    })
+}
+
+fn openai_alt_text_format() -> Value {
+    json!({
+        "type": "json_schema",
+        "name": "devimg_alt_text",
+        "strict": true,
+        "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "summary": { "type": "string" },
+                "drafts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "source_path": { "type": "string" },
+                            "representative_image_path": { "type": "string" },
+                            "candidate_alt_text": { "type": "string" },
+                            "review_note": { "type": "string" },
+                            "confidence": {
+                                "type": "string",
+                                "enum": ["low", "medium", "high"]
+                            },
+                            "image_category": {
+                                "type": "string",
+                                "enum": [
+                                    "content-photo",
+                                    "screenshot",
+                                    "logo",
+                                    "illustration",
+                                    "diagram",
+                                    "icon",
+                                    "decorative",
+                                    "text-heavy",
+                                    "unknown"
+                                ]
+                            },
+                            "warnings": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "enum": [
+                                        "decorative",
+                                        "text-heavy",
+                                        "logo",
+                                        "screenshot",
+                                        "uncertain-description",
+                                        "needs-human-review"
+                                    ]
+                                }
+                            }
+                        },
+                        "required": [
+                            "source_path",
+                            "representative_image_path",
+                            "candidate_alt_text",
+                            "review_note",
+                            "confidence",
+                            "image_category",
+                            "warnings"
+                        ]
+                    }
+                }
+            },
+            "required": ["summary", "drafts"]
         }
     })
 }

@@ -104,7 +104,7 @@ The command is deterministic and timestamp-free. It previews provider, model, co
 
 ## OpenAI AI Review
 
-Use `devimg review --ai` only when a human explicitly asks for provider-backed review. In `0.2.4`, real AI review calls are OpenAI-only and require `--ai-provider openai`, explicit `--model`, and a nonempty `OPENAI_API_KEY` unless `--dry-run` is passed.
+Use `devimg review --ai` only when a human explicitly asks for provider-backed review. Real AI review calls are OpenAI-only and require `--ai-provider openai`, explicit `--model`, and a nonempty `OPENAI_API_KEY` unless `--dry-run` is passed.
 
 ```bash
 devimg review --manifest public/images/devimg-manifest.json --ai --ai-provider openai --model "$DEVIMG_OPENAI_TEST_MODEL" --dry-run --ai-output /tmp/devimg-ai-review.json
@@ -112,6 +112,17 @@ devimg review --manifest public/images/devimg-manifest.json --ai --ai-provider o
 ```
 
 AI commands may read ignored `.env` files for `OPENAI_API_KEY`, but deterministic commands must not. Metadata-only is the default; pass `--include-images` only after explicit approval to send generated image bytes. AI observations are advisory and must not be treated as permission to hand-edit generated files.
+
+## OpenAI Alt-Text Drafts
+
+Use `devimg alt` only for reviewable draft alt text. Metadata-only is the default and writes placeholder records without API keys, provider calls, or image uploads. In `0.2.5`, real alt-text generation is OpenAI-only and requires explicit `--include-images`.
+
+```bash
+devimg alt --ai-provider openai --model "$DEVIMG_OPENAI_TEST_MODEL" --dry-run --output /tmp/devimg-alt.json
+devimg alt --ai-provider openai --model "$DEVIMG_OPENAI_TEST_MODEL" --include-images --output /tmp/devimg-alt.json --markdown /tmp/devimg-alt.md
+```
+
+Alt output is draft content only. Agents must not insert it into application code without human review, and must not pass `--include-images` unless a human has explicitly approved sending selected image bytes.
 
 ## Generated Instructions
 
