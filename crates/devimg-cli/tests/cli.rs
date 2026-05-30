@@ -8,11 +8,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["--help"]), 0);
     assert_code(run(["doctor", "--help"]), 0);
+    assert_code(run(["agent", "--help"]), 0);
+    assert_code(run(["agent", "task", "--help"]), 0);
     assert_code(run(["compare", "--help"]), 0);
     assert_code(run(["review", "--help"]), 0);
     let version = run(["--version"]);
     assert_status(&version, 0);
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.16"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.0"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -1546,6 +1548,222 @@ fn agent_init_stdout_and_invalid_target_are_stable() {
     let invalid = run(["agent", "init", "--target", "cursor", "--stdout"]);
     assert_status(&invalid, 2);
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("invalid value"));
+    cleanup(&project);
+}
+
+#[test]
+fn agent_task_stdout_default_uses_generic_and_keeps_secrets_out() {
+    let project = fixture_project("agent_task_stdout", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    let output = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args(["agent", "task", "--config", config.as_str()])
+        .env("OPENAI_API_KEY", "test-openai-secret")
+        .env("ANTHROPIC_API_KEY", "test-anthropic-secret")
+        .output()
+        .expect("devimg runs");
+
+    assert_status(&output, 0);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.starts_with("# DevImg Agent Task"));
+    assert!(stdout.contains("- Selected agent: `generic`"));
+    assert!(stdout.contains("- Mode: `local-only`"));
+    assert!(stdout.contains("Provider calls: none"));
+    assert!(stdout.contains("## Checks"));
+    assert!(stdout.contains("## Issues"));
+    assert!(stdout.contains("missing_manifest"));
+    assert!(stdout.contains("## File Ownership"));
+    assert!(stdout.contains("Generic Markdown final response"));
+    assert!(!stdout.contains("test-openai-secret"));
+    assert!(!stdout.contains("test-anthropic-secret"));
+    assert!(!project.join("devimg-agent-task.md").exists());
+    cleanup(&project);
+}
+
+#[test]
+fn agent_task_output_refuses_existing_unless_forced_and_protects_instruction_files() {
+    let project = fixture_project("agent_task_output", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    let task = project.join("ai_tasks/devimg-agent-task.md");
+    let task_arg = path_arg(task.clone());
+
+    assert_code(
+        run([
+            "agent",
+            "task",
+            "--config",
+            config.as_str(),
+            "--output",
+            task_arg.as_str(),
+        ]),
+        0,
+    );
+    assert!(fs::read_to_string(&task)
+        .expect("task output reads")
+        .contains("# DevImg Agent Task"));
+
+    fs::write(&task, "existing task\n").expect("write existing task");
+    let refused = run([
+        "agent",
+        "task",
+        "--config",
+        config.as_str(),
+        "--output",
+        task_arg.as_str(),
+    ]);
+    assert_status(&refused, 4);
+    assert_eq!(
+        fs::read_to_string(&task).expect("task output reads"),
+        "existing task\n"
+    );
+
+    assert_code(
+        run([
+            "agent",
+            "task",
+            "--config",
+            config.as_str(),
+            "--output",
+            task_arg.as_str(),
+            "--force",
+        ]),
+        0,
+    );
+    assert!(fs::read_to_string(&task)
+        .expect("forced task output reads")
+        .contains("Generic Markdown final response"));
+
+    let agents = project.join("AGENTS.md");
+    fs::write(&agents, "existing instructions\n").expect("write existing AGENTS");
+    let agents_arg = path_arg(agents.clone());
+    let protected = run([
+        "agent",
+        "task",
+        "--config",
+        config.as_str(),
+        "--output",
+        agents_arg.as_str(),
+        "--force",
+    ]);
+    assert_status(&protected, 2);
+    assert!(String::from_utf8_lossy(&protected.stderr)
+        .contains("refuses to write task output to agent instruction paths"));
+    assert_eq!(
+        fs::read_to_string(&agents).expect("AGENTS reads"),
+        "existing instructions\n"
+    );
+    cleanup(&project);
+}
+
+#[test]
+fn agent_task_custom_config_and_agent_guidance_are_distinct() {
+    let project = temp_project("agent_task_custom_config");
+    let source = project.join("assets/images/sample.png");
+    fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+    fs::copy(fixture_image(), &source).expect("copy fixture image");
+    fs::create_dir_all(project.join("config")).expect("create config dir");
+    let nested_config = config_text_with_width(64, "", r#"max_total_bytes = "5mb""#).replacen(
+        r#"root = ".""#,
+        r#"root = "..""#,
+        1,
+    );
+    fs::write(project.join("config/devimg.toml"), nested_config).expect("write nested config");
+
+    let codex = run_in_dir(
+        &project,
+        [
+            "agent",
+            "task",
+            "--config",
+            "config/devimg.toml",
+            "--agent",
+            "codex",
+        ],
+    );
+    assert_status(&codex, 0);
+    let codex_stdout = String::from_utf8_lossy(&codex.stdout);
+    assert!(codex_stdout.contains("- Selected agent: `codex`"));
+    assert!(codex_stdout.contains("devimg doctor --config config/devimg.toml"));
+    assert!(codex_stdout.contains("Codex final response"));
+
+    let claude = run_in_dir(
+        &project,
+        [
+            "agent",
+            "task",
+            "--config",
+            "config/devimg.toml",
+            "--agent",
+            "claude-code",
+        ],
+    );
+    assert_status(&claude, 0);
+    let claude_stdout = String::from_utf8_lossy(&claude.stdout);
+    assert!(claude_stdout.contains("- Selected agent: `claude-code`"));
+    assert!(claude_stdout.contains("Claude Code final response"));
+
+    let generic = run_in_dir(
+        &project,
+        [
+            "agent",
+            "task",
+            "--config",
+            "config/devimg.toml",
+            "--agent",
+            "generic",
+        ],
+    );
+    assert_status(&generic, 0);
+    let generic_stdout = String::from_utf8_lossy(&generic.stdout);
+    assert!(generic_stdout.contains("- Selected agent: `generic`"));
+    assert!(generic_stdout.contains("Generic Markdown final response"));
+    assert_ne!(codex_stdout, claude_stdout);
+    assert_ne!(claude_stdout, generic_stdout);
+    cleanup(&project);
+}
+
+#[test]
+fn agent_task_includes_warning_context_and_generated_paths() {
+    let project = temp_project("agent_task_warnings");
+    let source = project.join("assets/images/hero-screenshot.png");
+    fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+    fs::copy(fixture_image(), &source).expect("copy fixture image");
+    fs::write(
+        project.join("devimg.toml"),
+        r#"[project]
+root = "."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png"]
+
+[[preset]]
+name = "hero"
+widths = [64]
+formats = ["webp"]
+quality = 74
+fit = "cover"
+aspect_ratio = "16:9"
+
+[budgets]
+max_total_bytes = "5mb"
+"#,
+    )
+    .expect("write warning config");
+    let config = path_arg(project.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    let task = run(["agent", "task", "--config", config.as_str()]);
+
+    assert_status(&task, 0);
+    let stdout = String::from_utf8_lossy(&task.stdout);
+    assert!(stdout.contains("quality:low-lossy-quality"));
+    assert!(stdout.contains("Tune preset quality"));
+    assert!(stdout.contains("public/images/generated/hero-screenshot.hero.64.webp"));
+    assert!(stdout.contains("## Generated Artifacts"));
     cleanup(&project);
 }
 

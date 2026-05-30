@@ -53,6 +53,7 @@ Useful commands:
 ```bash
 cargo run -p devimg -- doctor --config examples/portfolio/devimg.toml
 cargo run -p devimg -- doctor --config examples/portfolio/devimg.toml --json
+cargo run -p devimg -- agent task --config examples/portfolio/devimg.toml --agent codex
 cargo run -p devimg -- agent init --target both --stdout
 cargo run -p devimg -- optimize --config examples/portfolio/devimg.toml --dry-run
 cargo run -p devimg -- report --manifest examples/portfolio/public/images/devimg-manifest.json
@@ -319,9 +320,32 @@ Exit codes are stable for CI:
 
 ## AI Agent Workflow
 
-Codex, Claude Code, and similar tools should run `devimg doctor` before editing image sources, config, manifests, generated variants, or app helper files. After changes, run the local loop above and commit the generated variants, manifest, report, and checked-in helper files together.
+Codex, Claude Code, and similar tools should start with a local task contract before editing image sources, config, manifests, generated variants, or app helper files:
 
-Do not edit generated files by hand. If agent instruction files such as `AGENTS.md`, `CLAUDE.md`, or `.claude/skills/**` already exist, do not overwrite them; add project-specific guidance only through an explicit reviewed change.
+```bash
+devimg agent task --agent codex
+devimg agent task --agent claude-code
+devimg agent task --agent generic
+```
+
+`agent task` reads `devimg.toml` by default, runs the same deterministic state checks as `doctor`, and writes Markdown to stdout. Use `--config <path>` for custom config files:
+
+```bash
+devimg agent task --config examples/portfolio/devimg.toml --agent codex
+```
+
+Write the task context to a reviewed file when another tool should consume it later:
+
+```bash
+devimg agent task --agent codex --output ai_tasks/devimg-agent-task.md
+devimg agent task --agent codex --output ai_tasks/devimg-agent-task.md --force
+```
+
+The output includes doctor checks, issues, warnings, acknowledged warnings, detected frameworks, manifest helpers, generated artifact paths, file ownership guidance, regeneration commands, and final-response guidance for the selected agent. It is local-only and does not call OpenAI, Anthropic, or any external provider.
+
+Do not edit generated files by hand. After changes, run the local loop above and commit the generated variants, manifest, report, and checked-in helper files together. If agent instruction files such as `AGENTS.md`, `CLAUDE.md`, or `.claude/skills/**` already exist, do not overwrite them; add project-specific guidance only through an explicit reviewed change.
+
+`agent task --output` refuses to replace existing files unless `--force` is passed, and it refuses agent instruction paths such as `AGENTS.md`, `CLAUDE.md`, `.claude/**`, `.codex/**`, `.cursor/**`, and `.github/copilot-instructions.md`. Use a task file such as `ai_tasks/devimg-agent-task.md` instead.
 
 See `docs/agent-contract.md` for the full AI-agent contract, including editable files, generated files, warning policy, and final response expectations.
 

@@ -1,10 +1,10 @@
 # AI Agent Workflow
 
-Run `devimg doctor` before changing source images, `devimg.toml`, generated variants, manifests, reports, or app helper files. The doctor output is the project-state contract for Codex, Claude Code, and other coding agents.
+Run `devimg agent task` before changing source images, `devimg.toml`, generated variants, manifests, reports, or app helper files. The generated task output wraps `devimg doctor` state into a project-state contract for Codex, Claude Code, and other coding agents.
 
 The full agent contract lives in `docs/agent-contract.md`. Use it as the file ownership and safety policy when a project has DevImg-managed assets.
 
-Roadmap planning for future AI-assisted features lives in `docs/roadmap-v0.2-ai.md`. Until those features exist, AI agents should rely on deterministic DevImg commands and treat any generated prose as reviewable suggestions, not source-of-truth pipeline behavior.
+Roadmap planning for future AI-assisted features lives in `docs/roadmap-v0.2-ai.md`. `devimg agent task` is local-only task context; later provider-backed features remain future work. AI agents should rely on deterministic DevImg commands and treat any generated prose as reviewable suggestions, not source-of-truth pipeline behavior.
 
 Recommended loop:
 
@@ -38,6 +38,33 @@ In GitHub Actions, prefer the built-in `review-output` input plus `actions/uploa
 Do not edit generated files by hand. Commit generated variants, `devimg-manifest.json`, `devimg-report.md`, and checked-in manifest helper files together when they change.
 
 Do not overwrite existing agent instruction files such as `AGENTS.md`, `CLAUDE.md`, or `.claude/skills/**`. If project-specific image-pipeline instructions are needed, add a reviewed snippet or a new documented section instead of replacing existing guidance.
+
+## Generated Task Context
+
+Use `devimg agent task` when an agent needs a per-task Markdown contract generated from current deterministic DevImg state:
+
+```bash
+devimg agent task --agent codex
+devimg agent task --agent claude-code
+devimg agent task --agent generic
+```
+
+The command reads `devimg.toml` by default. Pass `--config <path>` only when the project uses a custom config path:
+
+```bash
+devimg agent task --config examples/portfolio/devimg.toml --agent codex
+```
+
+By default, the task contract prints to stdout. Use `--output <path>` to write a Markdown task file, and `--force` only when replacing that task file is intentional:
+
+```bash
+devimg agent task --agent codex --output ai_tasks/devimg-agent-task.md
+devimg agent task --agent codex --output ai_tasks/devimg-agent-task.md --force
+```
+
+`agent task` includes doctor checks, issues, warnings, acknowledged warnings, detected frameworks, manifest helper paths, generated artifact paths, file ownership guidance, regeneration commands, next commands, and selected-agent final response guidance.
+
+The command does not call OpenAI, Anthropic, or any external provider. It refuses to write task output to agent instruction paths such as `AGENTS.md`, `CLAUDE.md`, `.claude/**`, `.codex/**`, `.cursor/**`, and `.github/copilot-instructions.md`; use a task file instead.
 
 ## Generated Instructions
 

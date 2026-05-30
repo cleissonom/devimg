@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -216,6 +217,7 @@ enum ManifestCommand {
 #[derive(Debug, Subcommand)]
 enum AgentCommand {
     Init(AgentInitArgs),
+    Task(AgentTaskArgs),
 }
 
 #[derive(Debug, Args)]
@@ -261,6 +263,25 @@ enum AgentTarget {
     Codex,
     Claude,
     Both,
+}
+
+#[derive(Debug, Args)]
+struct AgentTaskArgs {
+    #[arg(long, value_enum, default_value = "generic")]
+    agent: AgentTaskAgent,
+    #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
+    config: PathBuf,
+    #[arg(long)]
+    output: Option<PathBuf>,
+    #[arg(long)]
+    force: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum AgentTaskAgent {
+    Codex,
+    ClaudeCode,
+    Generic,
 }
 
 fn command_init(args: InitArgs) -> Result<(), CliError> {
@@ -456,7 +477,40 @@ fn command_manifest(args: ManifestArgs) -> Result<(), CliError> {
 fn command_agent(args: AgentArgs) -> Result<(), CliError> {
     match args.command {
         AgentCommand::Init(args) => command_agent_init(args),
+        AgentCommand::Task(args) => command_agent_task(args),
     }
+}
+
+fn command_agent_task(args: AgentTaskArgs) -> Result<(), CliError> {
+    let config = load_config(&args.config)?;
+    let report = doctor(&config, DoctorOptions::default())?;
+    let generated_artifacts = agent_task_generated_artifacts(&config);
+    let rendered = render_agent_task(&args, &config, &report, &generated_artifacts);
+
+    if let Some(output) = args.output {
+        if is_protected_agent_instruction_path(&output) {
+            return Err(CliError::Core(DevimgError::config(
+                &output,
+                "devimg agent task refuses to write task output to agent instruction paths",
+            )));
+        }
+        if output.exists() && !args.force {
+            return Err(CliError::Core(DevimgError::UnsafeOverwrite {
+                path: output,
+            }));
+        }
+        if let Some(parent) = output.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent).map_err(|source| DevimgError::io(parent, source))?;
+            }
+        }
+        fs::write(&output, rendered).map_err(|source| DevimgError::io(&output, source))?;
+        println!("Created {}", output.display());
+    } else {
+        print!("{rendered}");
+    }
+
+    Ok(())
 }
 
 fn command_agent_init(args: AgentInitArgs) -> Result<(), CliError> {
@@ -572,6 +626,14 @@ fn with_check_hint(report: String, config_path: &Path) -> String {
 fn render_core_error(error: &DevimgError) -> String {
     let mut out = format!("Error: {error}");
     match error {
+        DevimgError::Config { message, .. }
+            if message
+                == "devimg agent task refuses to write task output to agent instruction paths" =>
+        {
+            out.push_str(
+                "\nHint: choose a task output path such as `ai_tasks/devimg-agent-task.md` instead of an agent instruction file.",
+            );
+        }
         DevimgError::Config { path, message } if message == "config file not found" => {
             out.push_str(&format!(
                 "\nHint: create a starter config with `{}` or pass the right `--config` path.",
@@ -761,6 +823,293 @@ impl ManifestExportFormat {
         match self {
             Self::Json => "json",
             Self::Typescript => "typescript",
+        }
+    }
+}
+
+struct AgentTaskGeneratedArtifacts {
+    generated_variants: Vec<String>,
+    manifest_read_error: Option<String>,
+}
+
+fn agent_task_generated_artifacts(config: &devimg_core::Config) -> AgentTaskGeneratedArtifacts {
+    let manifest_path = agent_task_manifest_path(config);
+    match read_manifest(&manifest_path) {
+        Ok(manifest) => {
+            let generated_variants = manifest
+                .outputs
+                .into_iter()
+                .map(|output| output.output_path)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            AgentTaskGeneratedArtifacts {
+                generated_variants,
+                manifest_read_error: None,
+            }
+        }
+        Err(_) if !manifest_path.exists() => AgentTaskGeneratedArtifacts {
+            generated_variants: Vec::new(),
+            manifest_read_error: None,
+        },
+        Err(error) => AgentTaskGeneratedArtifacts {
+            generated_variants: Vec::new(),
+            manifest_read_error: Some(error.to_string()),
+        },
+    }
+}
+
+fn agent_task_manifest_path(config: &devimg_core::Config) -> PathBuf {
+    normalize_lexical(&if config.project.manifest.is_absolute() {
+        config.project.manifest.clone()
+    } else {
+        config.project.root.join(&config.project.manifest)
+    })
+}
+
+fn render_agent_task(
+    args: &AgentTaskArgs,
+    config: &devimg_core::Config,
+    report: &devimg_core::DoctorReport,
+    generated_artifacts: &AgentTaskGeneratedArtifacts,
+) -> String {
+    let commands = agent_instruction_commands(&args.config);
+    let agent = args.agent.label();
+    let frameworks = comma_or_none(&report.frameworks);
+    let manifest_helpers = comma_or_none(&report.manifest_helpers);
+    let source_outputs = config
+        .sources
+        .iter()
+        .map(|source| path_to_slash(&source.output))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    let mut out = String::new();
+    out.push_str("# DevImg Agent Task\n\n");
+    out.push_str("Use this Markdown as local task context for a coding agent. It is generated from deterministic DevImg state and does not call external AI providers.\n\n");
+    out.push_str("## Scope\n\n");
+    out.push_str(&format!("- Selected agent: `{agent}`\n"));
+    out.push_str("- Mode: `local-only`\n");
+    out.push_str(&format!("- Config: `{}`\n", report.config_path));
+    out.push_str(&format!("- Project root: `{}`\n", report.project_root));
+    out.push_str(&format!("- Doctor status: `{}`\n", report.status));
+    out.push_str("- Privacy: do not send image bytes, filenames, paths, metadata, API keys, or task output to external services unless a human explicitly asks for a later provider-backed workflow.\n");
+    out.push_str("- Provider calls: none. Do not read, print, or persist `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` for this task.\n\n");
+
+    out.push_str("## Deterministic State\n\n");
+    out.push_str(&format!("- Manifest: `{}`\n", report.manifest_path));
+    out.push_str(&format!("- Report: `{}`\n", report.report_path));
+    out.push_str(&format!("- Frameworks: `{frameworks}`\n"));
+    out.push_str(&format!("- Manifest helpers: `{manifest_helpers}`\n"));
+    out.push_str(&format!(
+        "- Source images: `{}`\n",
+        report.source_image_count
+    ));
+    out.push_str(&format!(
+        "- Variants planned: `{}`\n",
+        report.planned_variant_count
+    ));
+    out.push_str(&format!(
+        "- Variants generated: `{}`\n",
+        report.generated_variant_count
+    ));
+    out.push_str(&format!("- Source bytes: `{}`\n", report.source_bytes));
+    out.push_str(&format!("- Output bytes: `{}`\n", report.output_bytes));
+    out.push_str(&format!("- Budget status: `{}`\n", report.budget.status));
+    out.push_str(&format!("- Next command: `{}`\n\n", report.next_command));
+
+    out.push_str("## Checks\n\n");
+    if report.checks.is_empty() {
+        out.push_str("No checks reported.\n");
+    } else {
+        for check in &report.checks {
+            out.push_str(&format!(
+                "- `{}` `{}`: {}\n",
+                check.status, check.name, check.message
+            ));
+        }
+    }
+
+    out.push_str("\n## Issues\n\n");
+    push_diagnostics(&mut out, &report.issues, "No issues reported.");
+
+    out.push_str("\n## Warnings\n\n");
+    push_diagnostics(&mut out, &report.warnings, "No warnings reported.");
+
+    out.push_str("\n## Acknowledged Warnings\n\n");
+    push_diagnostics(
+        &mut out,
+        &report.acknowledged_warnings,
+        "No acknowledged warnings reported.",
+    );
+
+    out.push_str("\n## Generated Artifacts\n\n");
+    out.push_str(&format!("- Manifest file: `{}`\n", report.manifest_path));
+    out.push_str(&format!("- Markdown report: `{}`\n", report.report_path));
+    push_named_paths(
+        &mut out,
+        "Source output directories",
+        &source_outputs,
+        "No source output directories were configured.",
+    );
+    push_named_paths(
+        &mut out,
+        "Manifest helper files",
+        &report.manifest_helpers,
+        "No manifest helper files were detected.",
+    );
+    out.push_str("- Review artifact convention: `.devimg/review.html`\n");
+    if let Some(error) = &generated_artifacts.manifest_read_error {
+        out.push_str(&format!("- Manifest read note: `{error}`\n"));
+    }
+    push_named_paths(
+        &mut out,
+        "Generated variant paths from the current manifest",
+        &generated_artifacts.generated_variants,
+        "No generated variant paths were read from the current manifest.",
+    );
+
+    out.push_str("\n## File Ownership\n\n");
+    out.push_str("Agents may edit these when the task requires it:\n\n");
+    out.push_str(&format!("- DevImg config: `{}`\n", report.config_path));
+    for source in &config.sources {
+        out.push_str(&format!(
+            "- Source images for `{}`: `{}`\n",
+            source.name,
+            path_to_slash(&source.input)
+        ));
+    }
+    out.push_str("- Application code that consumes generated manifest exports.\n");
+    out.push_str("- Documentation or workflow files that describe/run DevImg.\n\n");
+    out.push_str("Agents must not hand-edit these generated files:\n\n");
+    out.push_str(&format!("- `{}`\n", report.manifest_path));
+    out.push_str(&format!("- `{}`\n", report.report_path));
+    for output in &source_outputs {
+        out.push_str(&format!("- `{output}`\n"));
+    }
+    for helper in &report.manifest_helpers {
+        out.push_str(&format!("- `{helper}`\n"));
+    }
+    out.push_str("- `.devimg/review.html`\n");
+    out.push_str("- Existing agent instruction files such as `AGENTS.md`, `CLAUDE.md`, `.claude/**`, `.codex/**`, `.cursor/**`, and `.github/copilot-instructions.md`.\n");
+
+    out.push_str("\n## Regeneration Commands\n\n");
+    out.push_str("```bash\n");
+    out.push_str(&format!("{}\n", commands.doctor));
+    out.push_str(&format!("{}\n", commands.optimize));
+    out.push_str(&format!("{}\n", commands.check));
+    out.push_str(&format!("{}\n", commands.doctor));
+    out.push_str("```\n\n");
+    out.push_str("Regenerate checked-in manifest helpers with a project-specific `devimg manifest export` command that matches the helper's original `--format`, `--strip-prefix`, `--url-prefix`, and `--typescript-helpers` options.\n\n");
+    out.push_str("Regenerate a local static review artifact when visual review is needed:\n\n");
+    out.push_str("```bash\n");
+    out.push_str(&format!(
+        "devimg review --manifest {} --output .devimg/review.html\n",
+        shell_arg(&report.manifest_path)
+    ));
+    out.push_str("```\n\n");
+
+    out.push_str("## Next Commands\n\n");
+    out.push_str(&format!(
+        "- Immediate next command: `{}`\n",
+        report.next_command
+    ));
+    out.push_str(&format!(
+        "- If source images or config changed: `{}`\n",
+        commands.optimize
+    ));
+    out.push_str(&format!("- Before finishing: `{}`\n", commands.check));
+    out.push_str(&format!("- Confirm final state: `{}`\n\n", commands.doctor));
+
+    out.push_str("## Final Response Guidance\n\n");
+    out.push_str(args.agent.final_response_guidance());
+    out.push('\n');
+
+    out
+}
+
+fn push_diagnostics(out: &mut String, diagnostics: &[devimg_core::DoctorDiagnostic], empty: &str) {
+    if diagnostics.is_empty() {
+        out.push_str(empty);
+        out.push('\n');
+        return;
+    }
+    for diagnostic in diagnostics {
+        out.push_str(&format!(
+            "- `{}` at `{}`: {}\n  Hint: {}\n",
+            diagnostic.code, diagnostic.path, diagnostic.message, diagnostic.hint
+        ));
+    }
+}
+
+fn push_named_paths(out: &mut String, label: &str, paths: &[String], empty: &str) {
+    out.push_str(&format!("- {label}:\n"));
+    if paths.is_empty() {
+        out.push_str(&format!("  - {empty}\n"));
+        return;
+    }
+    for path in paths {
+        out.push_str(&format!("  - `{path}`\n"));
+    }
+}
+
+fn comma_or_none(values: &[String]) -> String {
+    if values.is_empty() {
+        "none".to_string()
+    } else {
+        values.join(", ")
+    }
+}
+
+fn is_protected_agent_instruction_path(path: &Path) -> bool {
+    if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
+        let normalized = file_name.to_ascii_lowercase();
+        if matches!(
+            normalized.as_str(),
+            "agents.md"
+                | "claude.md"
+                | "gemini.md"
+                | "copilot-instructions.md"
+                | ".cursorrules"
+                | ".windsurfrules"
+                | ".clinerules"
+        ) {
+            return true;
+        }
+    }
+
+    path.components().any(|component| match component {
+        std::path::Component::Normal(part) => {
+            matches!(
+                part.to_str(),
+                Some(".claude" | ".codex" | ".cursor" | ".windsurf")
+            )
+        }
+        _ => false,
+    })
+}
+
+impl AgentTaskAgent {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Codex => "codex",
+            Self::ClaudeCode => "claude-code",
+            Self::Generic => "generic",
+        }
+    }
+
+    fn final_response_guidance(self) -> &'static str {
+        match self {
+            Self::Codex => {
+                "Codex final response: summarize changed source/config files, regenerated artifacts, verification commands with pass/fail results, intentionally deferred 0.2.1+ behavior, and any remaining risks or follow-up items."
+            }
+            Self::ClaudeCode => {
+                "Claude Code final response: use concise Markdown sections for Summary, Tests, Deferred Work, and Risks; mention that the task stayed local-only and that existing agent instruction files were not overwritten."
+            }
+            Self::Generic => {
+                "Generic Markdown final response: list changes, generated files, commands run, pass/fail results, deferred later-version behavior, and follow-up items in plain Markdown."
+            }
         }
     }
 }
