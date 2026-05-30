@@ -8,7 +8,7 @@ DevImg is distributed as public crates.io packages, GitHub Release binaries, and
 - CLI crate: <https://crates.io/crates/devimg>
 - Core crate: <https://crates.io/crates/devimg-core>
 - Current release: `v0.1.15`
-- Minimum Rust version for source installs: `1.85`
+- Minimum Rust version for source installs: `1.88`
 - GitHub Action: `cleissonom/devimg/action@v0.1.15`
 
 ## CLI Install
@@ -20,10 +20,10 @@ cargo install devimg
 devimg --version
 ```
 
-Source installs require Rust 1.85 or newer. If the active default toolchain is older, run `rustup update stable` or install with an explicit toolchain:
+Source installs require Rust 1.88 or newer. If the active default toolchain is older, run `rustup update stable` or install with an explicit toolchain:
 
 ```bash
-cargo +1.85.1 install devimg
+cargo +1.88.0 install devimg
 ```
 
 Users who do not want to build from source can download a GitHub Release archive for their platform and verify the matching `.sha256` checksum before running the binary.

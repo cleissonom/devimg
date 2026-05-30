@@ -814,8 +814,7 @@ fn agent_instruction_commands(config_path: &Path) -> AgentInstructionCommands {
     let optimize = optimize_command(config_path);
     let check = check_command(config_path);
     let doctor_export = format!(
-        "{} --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /",
-        doctor
+        "{doctor} --export-output lib/devimg.generated.ts --export-format typescript --strip-prefix public --url-prefix /"
     );
 
     AgentInstructionCommands {

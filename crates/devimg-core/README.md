@@ -10,6 +10,6 @@ Most users should install the `devimg` CLI crate instead:
 cargo install devimg
 ```
 
-Source installs require Rust 1.85 or newer.
+Source installs require Rust 1.88 or newer.
 
 Repository: <https://github.com/cleissonom/devimg>

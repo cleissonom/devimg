@@ -2,19 +2,19 @@
 
 `devimg` releases are crates.io packages plus GitHub Releases built from version tags. The tag must match the workspace package version.
 
-Source builds require Rust 1.85 or newer. The GitHub release workflow uses the current stable toolchain.
+Source builds require Rust 1.88 or newer. The GitHub release workflow uses the current stable toolchain.
 
 ## Pre-Publish Checks
 
 Run these checks locally before publishing:
 
 ```bash
-cargo +1.85.1 fmt --all -- --check
-cargo +1.85.1 clippy --all-targets --all-features -- -D warnings
-cargo +1.85.1 test --all
+cargo +1.88.0 fmt --all -- --check
+cargo +1.88.0 clippy --all-targets --all-features -- -D warnings
+cargo +1.88.0 test --all
 scripts/security-checks.sh
-cargo +1.85.1 publish --dry-run -p devimg-core
-cargo +1.85.1 package -p devimg --no-verify --list
+cargo +1.88.0 publish --dry-run -p devimg-core
+cargo +1.88.0 package -p devimg --no-verify --list
 ```
 
 The CLI crate uses a workspace path dependency with a registry version:
@@ -31,9 +31,9 @@ Publish the library first, then the CLI:
 
 ```bash
 cargo login <crates.io-api-token>
-cargo +1.85.1 publish -p devimg-core
-cargo +1.85.1 publish --dry-run -p devimg
-cargo +1.85.1 publish -p devimg
+cargo +1.88.0 publish -p devimg-core
+cargo +1.88.0 publish --dry-run -p devimg
+cargo +1.88.0 publish -p devimg
 ```
 
 After publishing, verify the public install path:

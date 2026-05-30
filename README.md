@@ -23,7 +23,7 @@ Install the CLI from crates.io:
 cargo install devimg
 ```
 
-Source installs require Rust 1.85 or newer. If your default toolchain is older, run `rustup update stable` or install with an explicit toolchain such as `cargo +1.85.1 install devimg`.
+Source installs require Rust 1.88 or newer. If your default toolchain is older, run `rustup update stable` or install with an explicit toolchain such as `cargo +1.88.0 install devimg`.
 
 Then use the installed binary:
 
