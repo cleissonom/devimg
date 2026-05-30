@@ -3,20 +3,27 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+use base64::Engine as _;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use devimg_core::{
-    ai_consent_preview_to_json, build_ai_consent_preview, check_with_options, compare_manifests,
-    doctor, doctor_report_to_json, inspect_image, load_config, manifest_compare_to_json,
-    manifest_export_to_json, manifest_export_to_typescript_with_options, optimize, read_manifest,
+    ai_consent_preview_to_json, ai_review_report_to_json, build_ai_consent_preview,
+    build_ai_review_dry_run_report, build_ai_review_report, build_ai_review_request,
+    check_with_options, compare_manifests, doctor, doctor_report_to_json, inspect_image,
+    load_config, manifest_compare_to_json, manifest_export_to_json,
+    manifest_export_to_typescript_with_options, optimize, read_manifest, render_ai_review_markdown,
     render_doctor_report, render_manifest_compare_report, render_manifest_report,
     render_manifest_review, render_run_report, render_suggestion_markdown, suggest,
-    suggestion_report_to_json, AiConsentOptions, AiProvider, CheckOptions, DevimgError,
+    suggestion_report_to_json, AiConsentOptions, AiProvider, AiReviewOptions,
+    AiReviewProviderPayload, AiReviewRequest, CheckOptions, DevimgError,
     DoctorManifestExportFormat, DoctorManifestExportOptions, DoctorOptions, ManifestCompareOptions,
     ManifestExportOptions, ManifestReviewOptions, ManifestTypescriptOptions, OptimizeOptions,
     SuggestOptions, SuggestionItem, SuggestionReport,
 };
+use serde_json::{json, Value};
 
 const DEFAULT_CONFIG_PATH: &str = "devimg.toml";
+const DEFAULT_AI_REVIEW_OUTPUT: &str = "devimg-ai-review.json";
+const DEFAULT_AI_REVIEW_MAX_IMAGES: usize = 8;
 
 fn main() {
     let code = match run(std::env::args_os()) {
@@ -187,6 +194,26 @@ struct ReviewArgs {
     stdout: bool,
     #[arg(long)]
     force: bool,
+    #[arg(long)]
+    ai: bool,
+    #[arg(long = "ai-provider", value_enum)]
+    ai_provider: Option<AiProviderArg>,
+    #[arg(long)]
+    model: Option<String>,
+    #[arg(long)]
+    metadata_only: bool,
+    #[arg(long)]
+    include_images: bool,
+    #[arg(long)]
+    dry_run: bool,
+    #[arg(long = "ai-output")]
+    ai_output: Option<PathBuf>,
+    #[arg(long)]
+    markdown: Option<PathBuf>,
+    #[arg(long, default_value_t = DEFAULT_AI_REVIEW_MAX_IMAGES)]
+    max_images: usize,
+    #[arg(long, value_enum, default_value = "low")]
+    image_detail: AiImageDetailArg,
 }
 
 #[derive(Debug, Args)]
@@ -230,6 +257,14 @@ enum SuggestFailSeverity {
     Advisory,
     Warning,
     Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum AiImageDetailArg {
+    Low,
+    High,
+    Auto,
+    Original,
 }
 
 #[derive(Debug, Args)]
@@ -464,6 +499,15 @@ fn command_report(args: ReportArgs) -> Result<(), CliError> {
 }
 
 fn command_review(args: ReviewArgs) -> Result<(), CliError> {
+    if args.ai {
+        return command_review_ai(args);
+    }
+    if review_has_ai_only_args(&args) {
+        return Err(CliError::Core(DevimgError::config(
+            &args.manifest,
+            "AI review flags require --ai",
+        )));
+    }
     if args.stdout == args.output.is_some() {
         return Err(CliError::Core(DevimgError::config(
             &args.manifest,
@@ -507,6 +551,153 @@ fn command_review(args: ReviewArgs) -> Result<(), CliError> {
     }
     fs::write(&output, rendered).map_err(|source| DevimgError::io(&output, source))?;
     println!("Created {}", output.display());
+    Ok(())
+}
+
+fn review_has_ai_only_args(args: &ReviewArgs) -> bool {
+    args.ai_provider.is_some()
+        || args.model.is_some()
+        || args.metadata_only
+        || args.include_images
+        || args.dry_run
+        || args.ai_output.is_some()
+        || args.markdown.is_some()
+        || args.max_images != DEFAULT_AI_REVIEW_MAX_IMAGES
+        || args.image_detail != AiImageDetailArg::Low
+}
+
+fn command_review_ai(args: ReviewArgs) -> Result<(), CliError> {
+    if args.stdout {
+        return Err(CliError::Core(DevimgError::config(
+            &args.manifest,
+            "--stdout cannot be combined with --ai; use --ai-output for AI review JSON",
+        )));
+    }
+    if args.metadata_only && args.include_images {
+        return Err(CliError::Core(DevimgError::config(
+            &args.manifest,
+            "--metadata-only cannot be combined with --include-images",
+        )));
+    }
+    if args.max_images == 0 {
+        return Err(CliError::Core(DevimgError::config(
+            &args.manifest,
+            "--max-images must be greater than 0",
+        )));
+    }
+
+    let provider = args
+        .ai_provider
+        .ok_or_else(|| {
+            CliError::Core(DevimgError::config(
+                &args.manifest,
+                "devimg review --ai requires --ai-provider openai",
+            ))
+        })?
+        .into_core();
+    if provider != AiProvider::Openai {
+        return Err(CliError::Core(DevimgError::config(
+            &args.manifest,
+            "devimg review --ai supports openai only in 0.2.4; Anthropic AI review is deferred",
+        )));
+    }
+    let model = args.model.ok_or_else(|| {
+        CliError::Core(DevimgError::config(
+            &args.manifest,
+            "devimg review --ai requires --model",
+        ))
+    })?;
+    if model.trim().is_empty() {
+        return Err(CliError::Core(DevimgError::config(
+            &args.manifest,
+            "--model cannot be empty",
+        )));
+    }
+
+    let manifest = read_manifest(&args.manifest)?;
+    let project_root = review_project_root(&args.manifest, &manifest);
+    let ai_output = args
+        .ai_output
+        .clone()
+        .unwrap_or_else(|| project_root.join(DEFAULT_AI_REVIEW_OUTPUT));
+    validate_distinct_review_outputs(
+        &args.manifest,
+        args.output.as_deref(),
+        &ai_output,
+        args.markdown.as_deref(),
+    )?;
+    let mut outputs = vec![ai_output.clone()];
+    if let Some(markdown) = &args.markdown {
+        outputs.push(markdown.clone());
+    }
+    if let Some(output) = &args.output {
+        outputs.push(output.clone());
+    }
+    for output in &outputs {
+        if output.exists() && !args.force {
+            return Err(CliError::Core(DevimgError::UnsafeOverwrite {
+                path: output.clone(),
+            }));
+        }
+    }
+
+    let request = build_ai_review_request(
+        &manifest,
+        &AiReviewOptions {
+            provider,
+            model: model.clone(),
+            command: "devimg review --ai".to_string(),
+            manifest_path: args.manifest.clone(),
+            project_root: project_root.clone(),
+            dry_run: args.dry_run,
+            include_images: args.include_images,
+            image_detail: args.image_detail.label().to_string(),
+            max_images: args.max_images,
+            ai_output_path: Some(ai_output.clone()),
+            markdown_path: args.markdown.clone(),
+        },
+    );
+    if args.include_images && request.selected_images.is_empty() && !manifest.outputs.is_empty() {
+        return Err(CliError::Core(DevimgError::config(
+            &args.manifest,
+            "no OpenAI-supported image outputs were found; supported formats are png, jpeg, webp, and non-animated gif",
+        )));
+    }
+
+    let report = if args.dry_run {
+        build_ai_review_dry_run_report(&request)
+    } else {
+        let key = read_ai_provider_key(
+            &args.manifest,
+            provider,
+            std::slice::from_ref(&project_root),
+            "devimg review --ai",
+        )?;
+        let payload = call_openai_review(&request, &project_root, &key)?;
+        build_ai_review_report(&request, payload, true)
+    };
+
+    write_text_file(&ai_output, &ai_review_report_to_json(&report))?;
+    println!("Created {}", ai_output.display());
+
+    if let Some(markdown) = args.markdown {
+        write_text_file(&markdown, &render_ai_review_markdown(&report))?;
+        println!("Created {}", markdown.display());
+    }
+
+    if let Some(output) = args.output {
+        let asset_path_prefix = review_asset_path_prefix(&output, &project_root)?;
+        let rendered = render_manifest_review(
+            &manifest,
+            &ManifestReviewOptions {
+                asset_path_prefix,
+                ..ManifestReviewOptions::default()
+            },
+        );
+        write_text_file(&output, &rendered)?;
+        println!("Created {}", output.display());
+    }
+
     Ok(())
 }
 
@@ -706,8 +897,14 @@ fn command_ai_consent(args: AiConsentArgs) -> Result<(), CliError> {
     }
 
     let provider = args.ai_provider.into_core();
+    let config = load_config(&args.config)?;
     if !args.dry_run {
-        validate_ai_provider_key(&args.config, provider)?;
+        let _key = read_ai_provider_key(
+            &args.config,
+            provider,
+            std::slice::from_ref(&config.project.root),
+            "devimg ai consent",
+        )?;
     }
     if let Some(output) = &args.output {
         if output.exists() && !args.force {
@@ -717,7 +914,6 @@ fn command_ai_consent(args: AiConsentArgs) -> Result<(), CliError> {
         }
     }
 
-    let config = load_config(&args.config)?;
     let preview = build_ai_consent_preview(
         &config,
         &AiConsentOptions {
@@ -742,16 +938,319 @@ fn command_ai_consent(args: AiConsentArgs) -> Result<(), CliError> {
     Ok(())
 }
 
-fn validate_ai_provider_key(config_path: &Path, provider: AiProvider) -> Result<(), CliError> {
-    let env_var = provider.credential_env_var();
-    let value = std::env::var(env_var).unwrap_or_default();
-    if value.trim().is_empty() {
-        return Err(CliError::Core(DevimgError::config(
-            config_path,
-            format!("{env_var} is required for devimg ai consent unless --dry-run is passed"),
-        )));
+fn validate_distinct_review_outputs(
+    manifest_path: &Path,
+    html_output: Option<&Path>,
+    ai_output: &Path,
+    markdown: Option<&Path>,
+) -> Result<(), CliError> {
+    let ai_comparable = comparable_output_path(ai_output)?;
+    if let Some(html_output) = html_output {
+        if comparable_output_path(html_output)? == ai_comparable {
+            return Err(CliError::Core(DevimgError::config(
+                manifest_path,
+                "--output and --ai-output must use different paths",
+            )));
+        }
+    }
+    if let Some(markdown) = markdown {
+        let markdown_comparable = comparable_output_path(markdown)?;
+        if markdown_comparable == ai_comparable {
+            return Err(CliError::Core(DevimgError::config(
+                manifest_path,
+                "--ai-output and --markdown must use different paths",
+            )));
+        }
+        if let Some(html_output) = html_output {
+            if comparable_output_path(html_output)? == markdown_comparable {
+                return Err(CliError::Core(DevimgError::config(
+                    manifest_path,
+                    "--output and --markdown must use different paths",
+                )));
+            }
+        }
     }
     Ok(())
+}
+
+fn read_ai_provider_key(
+    error_path: &Path,
+    provider: AiProvider,
+    project_roots: &[PathBuf],
+    command_name: &str,
+) -> Result<String, CliError> {
+    let env_var = provider.credential_env_var();
+    if let Ok(value) = std::env::var(env_var) {
+        if !value.trim().is_empty() {
+            return Ok(value);
+        }
+    }
+
+    for root in ai_env_roots(project_roots)? {
+        if let Some(value) = read_env_file_value(&root.join(".env"), env_var)? {
+            if !value.trim().is_empty() {
+                return Ok(value);
+            }
+        }
+    }
+
+    Err(CliError::Core(DevimgError::config(
+        error_path,
+        format!("{env_var} is required for {command_name} unless --dry-run is passed"),
+    )))
+}
+
+fn ai_env_roots(project_roots: &[PathBuf]) -> Result<Vec<PathBuf>, CliError> {
+    let mut roots = Vec::new();
+    for root in project_roots {
+        push_unique_path(&mut roots, normalize_lexical(root));
+    }
+    let current_dir = std::env::current_dir().map_err(|source| DevimgError::io(".", source))?;
+    push_unique_path(&mut roots, normalize_lexical(&current_dir));
+    Ok(roots)
+}
+
+fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
+    }
+}
+
+fn read_env_file_value(path: &Path, key: &str) -> Result<Option<String>, CliError> {
+    let raw = match fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(source) => return Err(CliError::Core(DevimgError::io(path, source))),
+    };
+    for line in raw.lines() {
+        if let Some(value) = parse_env_line_value(line, key) {
+            if !value.trim().is_empty() {
+                return Ok(Some(value));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn parse_env_line_value(line: &str, key: &str) -> Option<String> {
+    let line = line.trim_start();
+    if line.is_empty() || line.starts_with('#') {
+        return None;
+    }
+    let line = line.strip_prefix("export ").unwrap_or(line).trim_start();
+    let (name, value) = line.split_once('=')?;
+    if name.trim() != key {
+        return None;
+    }
+    let mut value = value.trim().to_string();
+    if !value.starts_with('"') && !value.starts_with('\'') {
+        if let Some((before_comment, _)) = value.split_once(" #") {
+            value = before_comment.trim_end().to_string();
+        }
+    }
+    if value.len() >= 2 {
+        let bytes = value.as_bytes();
+        let quote = bytes[0];
+        if (quote == b'"' || quote == b'\'') && bytes[value.len() - 1] == quote {
+            value = value[1..value.len() - 1].to_string();
+        }
+    }
+    Some(value)
+}
+
+fn call_openai_review(
+    request: &AiReviewRequest,
+    project_root: &Path,
+    api_key: &str,
+) -> Result<AiReviewProviderPayload, CliError> {
+    let body = build_openai_review_body(request, project_root)?;
+    let client = reqwest::blocking::Client::builder().build().map_err(|_| {
+        CliError::Core(DevimgError::config(
+            &request.manifest_path,
+            "failed to construct OpenAI HTTP client",
+        ))
+    })?;
+    let response = client
+        .post("https://api.openai.com/v1/responses")
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .map_err(|_| {
+            CliError::Core(DevimgError::config(
+                &request.manifest_path,
+                "OpenAI Responses API request failed before a response was received",
+            ))
+        })?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(CliError::Core(DevimgError::config(
+            &request.manifest_path,
+            format!(
+                "OpenAI Responses API request failed with HTTP status {}",
+                status.as_u16()
+            ),
+        )));
+    }
+    let value: Value = response.json().map_err(|_| {
+        CliError::Core(DevimgError::config(
+            &request.manifest_path,
+            "OpenAI response was not valid JSON",
+        ))
+    })?;
+    let output_text = extract_openai_output_text(&value).ok_or_else(|| {
+        CliError::Core(DevimgError::config(
+            &request.manifest_path,
+            "OpenAI response did not include AI review JSON",
+        ))
+    })?;
+    serde_json::from_str::<AiReviewProviderPayload>(output_text.trim()).map_err(|_| {
+        CliError::Core(DevimgError::config(
+            &request.manifest_path,
+            "OpenAI response did not match the DevImg AI review schema",
+        ))
+    })
+}
+
+fn build_openai_review_body(
+    request: &AiReviewRequest,
+    project_root: &Path,
+) -> Result<Value, CliError> {
+    let mut user_content = vec![json!({
+        "type": "input_text",
+        "text": openai_review_user_text(request),
+    })];
+    if request.image_bytes_included {
+        for image in &request.selected_images {
+            let image_path = project_root.join(&image.output_path);
+            let bytes =
+                fs::read(&image_path).map_err(|source| DevimgError::io(&image_path, source))?;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+            user_content.push(json!({
+                "type": "input_image",
+                "image_url": format!("data:{};base64,{}", image.mime_type, encoded),
+                "detail": openai_image_detail(&image.detail),
+            }));
+        }
+    }
+
+    Ok(json!({
+        "model": request.model,
+        "input": [
+            {
+                "role": "developer",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": openai_review_developer_text(),
+                    }
+                ]
+            },
+            {
+                "role": "user",
+                "content": user_content
+            }
+        ],
+        "text": {
+            "format": openai_review_text_format()
+        }
+    }))
+}
+
+fn openai_review_developer_text() -> &'static str {
+    "You are reviewing DevImg-generated web image variants. Return JSON that matches the supplied schema. Treat every observation as advisory. Do not suggest editing generated image files by hand. Do not include secrets, API keys, data URLs, or raw image bytes. Focus only on crop risk, readability risk, excessive padding, low-resolution source, format-quality concern, and accessibility note."
+}
+
+fn openai_image_detail(detail: &str) -> &str {
+    match detail {
+        "low" | "high" | "auto" => detail,
+        "original" => "high",
+        _ => "low",
+    }
+}
+
+fn openai_review_user_text(request: &AiReviewRequest) -> String {
+    let metadata =
+        serde_json::to_string_pretty(request).expect("AI review request serialization cannot fail");
+    format!(
+        "Review this DevImg manifest metadata and the optional selected image inputs. Return JSON only. Metadata:\n{metadata}"
+    )
+}
+
+fn openai_review_text_format() -> Value {
+    json!({
+        "type": "json_schema",
+        "name": "devimg_ai_review",
+        "strict": true,
+        "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "summary": { "type": "string" },
+                "observations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "category": {
+                                "type": "string",
+                                "enum": [
+                                    "crop risk",
+                                    "readability risk",
+                                    "excessive padding",
+                                    "low-resolution source",
+                                    "format-quality concern",
+                                    "accessibility note"
+                                ]
+                            },
+                            "severity": {
+                                "type": "string",
+                                "enum": ["advisory"]
+                            },
+                            "source_path": { "type": "string" },
+                            "preset": { "type": "string" },
+                            "output_path": { "type": "string" },
+                            "rationale": { "type": "string" },
+                            "suggested_next_command": { "type": "string" }
+                        },
+                        "required": [
+                            "category",
+                            "severity",
+                            "source_path",
+                            "preset",
+                            "output_path",
+                            "rationale",
+                            "suggested_next_command"
+                        ]
+                    }
+                }
+            },
+            "required": ["summary", "observations"]
+        }
+    })
+}
+
+fn extract_openai_output_text(value: &Value) -> Option<String> {
+    if let Some(text) = value.get("output_text").and_then(Value::as_str) {
+        return Some(text.to_string());
+    }
+
+    let mut text = String::new();
+    for output in value.get("output")?.as_array()? {
+        let Some(content) = output.get("content").and_then(Value::as_array) else {
+            continue;
+        };
+        for item in content {
+            if let Some(part) = item.get("text").and_then(Value::as_str) {
+                text.push_str(part);
+            }
+        }
+    }
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 fn command_agent_task(args: AgentTaskArgs) -> Result<(), CliError> {
@@ -1142,6 +1641,17 @@ impl AiProviderArg {
         match self {
             Self::Openai => AiProvider::Openai,
             Self::Anthropic => AiProvider::Anthropic,
+        }
+    }
+}
+
+impl AiImageDetailArg {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::High => "high",
+            Self::Auto => "auto",
+            Self::Original => "original",
         }
     }
 }
@@ -1687,6 +2197,51 @@ max_file_bytes = "350kb"
 fail_on_regression = true
 "#
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_openai_output_text, parse_env_line_value};
+    use serde_json::json;
+
+    #[test]
+    fn env_line_parser_extracts_key_without_comments() {
+        assert_eq!(
+            parse_env_line_value("OPENAI_API_KEY=test-secret # local", "OPENAI_API_KEY").as_deref(),
+            Some("test-secret")
+        );
+        assert_eq!(
+            parse_env_line_value("export OPENAI_API_KEY=\"quoted secret\"", "OPENAI_API_KEY")
+                .as_deref(),
+            Some("quoted secret")
+        );
+        assert_eq!(
+            parse_env_line_value("ANTHROPIC_API_KEY=other", "OPENAI_API_KEY"),
+            None
+        );
+    }
+
+    #[test]
+    fn openai_response_text_extraction_supports_responses_shape() {
+        let value = json!({
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "{\"summary\":\"ok\",\"observations\":[]}"
+                        }
+                    ]
+                }
+            ]
+        });
+
+        assert_eq!(
+            extract_openai_output_text(&value).as_deref(),
+            Some("{\"summary\":\"ok\",\"observations\":[]}")
+        );
+    }
 }
 
 #[derive(Debug)]

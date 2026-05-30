@@ -19,9 +19,13 @@ mod transform;
 mod warnings;
 
 pub use ai::{
-    ai_consent_preview_to_json, build_ai_consent_preview, AiConsentOptions, AiConsentPreview,
-    AiGeneratedOutput, AiProvider, AiProviderClient, AiProviderResponse, AiSelectedFile,
-    MockAiProviderClient,
+    ai_consent_preview_to_json, ai_image_mime_type, ai_review_report_to_json,
+    build_ai_consent_preview, build_ai_review_dry_run_report, build_ai_review_report,
+    build_ai_review_request, render_ai_review_markdown, AiConsentOptions, AiConsentPreview,
+    AiGeneratedOutput, AiProvider, AiProviderClient, AiProviderResponse, AiReviewImageInput,
+    AiReviewManifestSummary, AiReviewObservation, AiReviewOptions, AiReviewOutput,
+    AiReviewProviderClient, AiReviewProviderPayload, AiReviewReport, AiReviewRequest,
+    AiReviewSummary, AiSelectedFile, MockAiProviderClient, MockAiReviewProviderClient,
 };
 pub use compare::{
     compare_manifests, manifest_compare_to_json, ManifestCompare, ManifestCompareChange,

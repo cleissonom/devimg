@@ -221,15 +221,19 @@ Done criteria:
 
 Goal: generate AI-assisted visual review observations for selected images.
 
+Status: implemented for the `0.2.4` release as OpenAI-only provider-backed review. Anthropic real review calls remain deferred.
+
 Scope:
 
 - Add `devimg review --ai`.
-- Require `--ai-provider openai|anthropic`.
+- Require `--ai-provider openai` for real AI review in this release.
 - Require `--model <model>`.
 - Require `--include-images` for image-byte review.
 - Support `--metadata-only` for path, manifest, dimension, size, and warning review without image bytes.
 - Generate `devimg-ai-review.json`.
 - Support `--markdown <path>` for a human-readable review.
+- Support `--dry-run` without API keys or provider calls.
+- Load `OPENAI_API_KEY` only for explicit AI commands, including ignored `.env` files.
 - Label all AI observations as advisory.
 - Include observation category:
   - crop risk;
@@ -244,7 +248,7 @@ Scope:
 Tests:
 
 - mocked OpenAI review works.
-- mocked Anthropic review works.
+- Anthropic review is rejected clearly while consent previews stay available.
 - no network is required in CI.
 - existing review artifacts still work without AI.
 - overwrite protection works.

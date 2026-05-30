@@ -4,6 +4,14 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 ## Unreleased
 
+## 0.2.4
+
+- Added `devimg review --ai` for opt-in OpenAI AI review of manifest metadata and, with explicit `--include-images`, generated image bytes.
+- Added AI review JSON and Markdown artifacts, dry-run previews, overwrite protection, image-detail and max-image controls, and advisory observation categories.
+- Added OpenAI Responses API integration with structured output parsing, `.env` credential loading limited to explicit AI commands, and no key/value persistence.
+- Kept Anthropic real AI review deferred while preserving existing provider consent previews.
+- Updated CI smoke coverage, docs, release references, and dogfood guidance for `v0.2.4`.
+
 ## 0.2.3
 
 - Added `devimg ai consent` for deterministic OpenAI/Anthropic consent previews.
