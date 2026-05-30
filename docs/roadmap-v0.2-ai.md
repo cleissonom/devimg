@@ -301,16 +301,18 @@ Done criteria:
 
 Goal: generate reviewable documentation, release, and project-copy drafts from DevImg artifacts.
 
+Status: implemented for the `0.2.6` release as local metadata-only Markdown drafts plus OpenAI text-only provider-backed drafting. Anthropic real drafting remains deferred.
+
 Scope:
 
 - Add `devimg draft`.
 - Generate Markdown drafts from:
   - manifest;
   - Markdown report;
-  - compare report;
-  - visual review summary;
-  - AI review summary;
-  - changelog section.
+  - optional compare JSON;
+  - optional visual review HTML summary;
+  - optional AI review JSON;
+  - changelog excerpt when present.
 - Support draft types:
   - release notes;
   - README snippet;
@@ -318,7 +320,7 @@ Scope:
   - blog outline;
   - social post outline.
 - Support deterministic template output without provider credentials.
-- Support provider-backed prose with `--ai-provider openai|anthropic` and `--model <model>`.
+- Support provider-backed prose with `--ai-provider openai|anthropic` and `--model <model>`; real provider calls are OpenAI-only in this release.
 - Refuse to overwrite existing output unless `--force` is passed.
 - Avoid publishing or posting anywhere automatically.
 
@@ -327,6 +329,8 @@ Tests:
 - deterministic drafts work without API keys.
 - mocked OpenAI drafts work.
 - mocked Anthropic drafts work.
+- OpenAI non-dry-run requires `OPENAI_API_KEY`.
+- Anthropic non-dry-run is rejected clearly as deferred.
 - output is clearly marked as draft content.
 - overwrite protection works.
 
@@ -356,6 +360,8 @@ Default behavior:
 
 - no external call from deterministic commands;
 - no external call from `devimg suggest --metadata-only`;
+- no external call from `devimg draft` metadata-only or dry-run modes;
+- no draft artifact should be treated as published prose without human review;
 - no image bytes sent without `--include-images`;
 - no overwrite without `--force`;
 - no API key values printed to stdout, stderr, reports, JSON, Markdown, or logs.

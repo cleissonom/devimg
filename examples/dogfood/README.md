@@ -62,10 +62,20 @@ cargo run -p devimg -- manifest export \
 cargo run -p devimg -- review \
   --manifest examples/dogfood/public/images/devimg-manifest.json \
   --output examples/dogfood/.devimg/review.html
+cargo run -p devimg -- draft \
+  --config examples/dogfood/devimg.toml \
+  --draft-type project-page-copy \
+  --ai-provider openai \
+  --model openai-dry-run-model \
+  --dry-run \
+  --ai-review-json /tmp/devimg-dogfood-openai-ai-review.json \
+  --review-html examples/dogfood/.devimg/review.html \
+  --output /tmp/devimg-dogfood-project-page-copy.md \
+  --force
 ```
 
 The review artifact is derived output. Use the command above before taking screenshots for docs, release notes, or demos. If a screenshot is committed later, refresh it from the regenerated review artifact rather than editing it by hand.
 
-The suggestion gate is read-only and should stay in CI. The explicit suggestion, AI consent preview, AI review dry-run, and alt-text dry-run artifact commands write to `/tmp` for local review; do not commit those files unless a later task intentionally promotes them. Consent, review, and alt dry-runs require no API keys, include no image bytes by default, and perform no OpenAI calls. Real `review --ai` and `alt --include-images` calls are OpenAI-only in `0.2.5` and send image bytes only with `--include-images`.
+The suggestion gate is read-only and should stay in CI. The explicit suggestion, AI consent preview, AI review dry-run, alt-text dry-run, and draft dry-run artifact commands write to `/tmp` for local review; do not commit those files unless a later task intentionally promotes them. Consent, review, alt, and draft dry-runs require no API keys, include no image bytes by default, and perform no OpenAI calls. Real `review --ai`, `alt --include-images`, and `draft --ai-provider openai` calls are OpenAI-only and send image bytes only with `--include-images`.
 
 Use this example when changing DevImg behavior that affects hashed output filenames, source-specific paths, contain resizing, crop anchors, helper exports, review artifacts, or Action smoke coverage.

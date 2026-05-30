@@ -15,9 +15,10 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["suggest", "--help"]), 0);
     assert_code(run(["compare", "--help"]), 0);
     assert_code(run(["review", "--help"]), 0);
+    assert_code(run(["draft", "--help"]), 0);
     let version = run(["--version"]);
     assert_status(&version, 0);
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.5"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.6"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -1325,6 +1326,279 @@ fn alt_validation_and_missing_key_errors_are_stable() {
 }
 
 #[test]
+fn draft_metadata_only_default_covers_all_draft_types() {
+    let project = fixture_project("draft_metadata_only", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+
+    for draft_type in [
+        "release-notes",
+        "readme-snippet",
+        "project-page-copy",
+        "blog-outline",
+        "social-post-outline",
+    ] {
+        let draft = project.join(format!("{draft_type}.md"));
+        let draft_arg = path_arg(draft.clone());
+        let output = Command::new(env!("CARGO_BIN_EXE_devimg"))
+            .args([
+                "draft",
+                "--config",
+                config.as_str(),
+                "--draft-type",
+                draft_type,
+                "--output",
+                draft_arg.as_str(),
+            ])
+            .env_remove("OPENAI_API_KEY")
+            .env_remove("ANTHROPIC_API_KEY")
+            .output()
+            .expect("devimg runs");
+
+        assert_status(&output, 0);
+        let markdown = fs::read_to_string(&draft).expect("draft Markdown reads");
+        assert!(markdown.starts_with("# Draft; review before publishing"));
+        assert!(markdown.contains(&format!("- Draft type: `{draft_type}`")));
+        assert!(markdown.contains("- Mode: `metadata-only`"));
+        assert!(markdown.contains("- Provider called: `false`"));
+        assert!(markdown.contains("public/images/devimg-manifest.json"));
+        assert!(markdown.contains("## Draft"));
+    }
+
+    cleanup(&project);
+}
+
+#[test]
+fn draft_dry_run_works_without_keys_for_both_providers() {
+    let project = fixture_project("draft_dry_run", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+
+    for (provider, model) in [
+        ("openai", "openai-dry-run-model"),
+        ("anthropic", "anthropic-dry-run-model"),
+    ] {
+        let draft = project.join(format!("{provider}-draft.md"));
+        let draft_arg = path_arg(draft.clone());
+        let output = Command::new(env!("CARGO_BIN_EXE_devimg"))
+            .args([
+                "draft",
+                "--config",
+                config.as_str(),
+                "--draft-type",
+                "project-page-copy",
+                "--ai-provider",
+                provider,
+                "--model",
+                model,
+                "--dry-run",
+                "--output",
+                draft_arg.as_str(),
+            ])
+            .env_remove("OPENAI_API_KEY")
+            .env_remove("ANTHROPIC_API_KEY")
+            .output()
+            .expect("devimg runs");
+
+        assert_status(&output, 0);
+        let markdown = fs::read_to_string(&draft).expect("draft Markdown reads");
+        assert!(markdown.contains(&format!("- Provider: `{provider}`")));
+        assert!(markdown.contains(&format!("- Model: `{model}`")));
+        assert!(markdown.contains("- Dry run: `true`"));
+        assert!(markdown.contains("- Provider called: `false`"));
+        assert!(!markdown.contains("base64"));
+    }
+
+    cleanup(&project);
+}
+
+#[test]
+fn draft_provider_validation_errors_are_stable() {
+    let project = fixture_project("draft_validation", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+
+    let missing_key_output = project.join("missing-key-draft.md");
+    let missing_key_arg = path_arg(missing_key_output.clone());
+    let missing_key = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "draft",
+            "--config",
+            config.as_str(),
+            "--draft-type",
+            "release-notes",
+            "--ai-provider",
+            "openai",
+            "--model",
+            "openai-model",
+            "--output",
+            missing_key_arg.as_str(),
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&missing_key, 2);
+    let stderr = String::from_utf8_lossy(&missing_key.stderr);
+    assert!(stderr.contains("OPENAI_API_KEY"));
+    assert!(!stderr.contains("ANTHROPIC_API_KEY"));
+    assert!(!missing_key_output.exists());
+
+    let anthropic_output = project.join("anthropic-draft.md");
+    let anthropic_arg = path_arg(anthropic_output.clone());
+    let anthropic = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "draft",
+            "--config",
+            config.as_str(),
+            "--draft-type",
+            "release-notes",
+            "--ai-provider",
+            "anthropic",
+            "--model",
+            "anthropic-model",
+            "--output",
+            anthropic_arg.as_str(),
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&anthropic, 2);
+    let anthropic_stderr = String::from_utf8_lossy(&anthropic.stderr);
+    assert!(anthropic_stderr.contains("Anthropic draft generation is deferred"));
+    assert!(!anthropic_stderr.contains("ANTHROPIC_API_KEY"));
+    assert!(!anthropic_output.exists());
+
+    let invalid_mode_output = project.join("invalid-mode-draft.md");
+    let invalid_mode_arg = path_arg(invalid_mode_output.clone());
+    let invalid_mode = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "draft",
+            "--config",
+            config.as_str(),
+            "--draft-type",
+            "release-notes",
+            "--metadata-only",
+            "--ai-provider",
+            "openai",
+            "--model",
+            "openai-model",
+            "--dry-run",
+            "--output",
+            invalid_mode_arg.as_str(),
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&invalid_mode, 2);
+    assert!(String::from_utf8_lossy(&invalid_mode.stderr)
+        .contains("--metadata-only cannot be combined with --ai-provider"));
+    assert!(!invalid_mode_output.exists());
+
+    cleanup(&project);
+}
+
+#[test]
+fn draft_output_is_deterministic_refuses_overwrite_and_ignores_provider_env() {
+    let project = fixture_project("draft_output", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    let draft = project.join("devimg-draft.md");
+    let draft_arg = path_arg(draft.clone());
+    fs::write(
+        project.join(".env"),
+        "OPENAI_API_KEY=test-openai-env-secret-do-not-leak\nANTHROPIC_API_KEY=test-anthropic-env-secret-do-not-leak\n",
+    )
+    .expect("write project env");
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+
+    let first = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "draft",
+            "--config",
+            config.as_str(),
+            "--draft-type",
+            "readme-snippet",
+            "--output",
+            draft_arg.as_str(),
+        ])
+        .env("OPENAI_API_KEY", "test-openai-secret-do-not-leak")
+        .env("ANTHROPIC_API_KEY", "test-anthropic-secret-do-not-leak")
+        .output()
+        .expect("devimg runs");
+    assert_status(&first, 0);
+    let first_markdown = fs::read_to_string(&draft).expect("draft Markdown reads");
+
+    let refused = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "draft",
+            "--config",
+            config.as_str(),
+            "--draft-type",
+            "readme-snippet",
+            "--output",
+            draft_arg.as_str(),
+        ])
+        .env("OPENAI_API_KEY", "different-openai-secret-do-not-leak")
+        .env(
+            "ANTHROPIC_API_KEY",
+            "different-anthropic-secret-do-not-leak",
+        )
+        .output()
+        .expect("devimg runs");
+    assert_status(&refused, 4);
+    assert_eq!(
+        fs::read_to_string(&draft).expect("draft Markdown reads"),
+        first_markdown
+    );
+
+    let forced = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "draft",
+            "--config",
+            config.as_str(),
+            "--draft-type",
+            "readme-snippet",
+            "--output",
+            draft_arg.as_str(),
+            "--force",
+        ])
+        .env("OPENAI_API_KEY", "different-openai-secret-do-not-leak")
+        .env(
+            "ANTHROPIC_API_KEY",
+            "different-anthropic-secret-do-not-leak",
+        )
+        .output()
+        .expect("devimg runs");
+    assert_status(&forced, 0);
+    let forced_markdown = fs::read_to_string(&draft).expect("draft Markdown reads");
+    assert_eq!(forced_markdown, first_markdown);
+
+    let all_output = format!(
+        "{}{}{}{}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr),
+        String::from_utf8_lossy(&forced.stdout),
+        forced_markdown
+    );
+    for secret in [
+        "test-openai-secret-do-not-leak",
+        "test-anthropic-secret-do-not-leak",
+        "different-openai-secret-do-not-leak",
+        "different-anthropic-secret-do-not-leak",
+        "test-openai-env-secret-do-not-leak",
+        "test-anthropic-env-secret-do-not-leak",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+    ] {
+        assert!(!all_output.contains(secret));
+    }
+
+    cleanup(&project);
+}
+
+#[test]
 fn dogfood_example_flow_covers_frontend_assets() {
     let project = temp_project("dogfood_example");
     copy_dir_all(&repo_root().join("examples/dogfood"), &project);
@@ -1440,6 +1714,27 @@ fn dogfood_example_flow_covers_frontend_assets() {
     let html = fs::read_to_string(&review).expect("review artifact reads");
     assert!(html.contains("assets/images/social/open-graph.png"));
     assert!(html.contains("logo-contain"));
+
+    let draft = project.join("project-page-copy.md");
+    let draft_arg = path_arg(draft.clone());
+    assert_code(
+        run([
+            "draft",
+            "--config",
+            config.as_str(),
+            "--draft-type",
+            "project-page-copy",
+            "--dry-run",
+            "--review-html",
+            review_arg.as_str(),
+            "--output",
+            draft_arg.as_str(),
+        ]),
+        0,
+    );
+    let draft_markdown = fs::read_to_string(&draft).expect("draft artifact reads");
+    assert!(draft_markdown.contains("- Draft type: `project-page-copy`"));
+    assert!(draft_markdown.contains("review-html"));
     cleanup(&project);
 }
 

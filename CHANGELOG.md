@@ -4,6 +4,14 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 ## Unreleased
 
+## 0.2.6
+
+- Added `devimg draft` for reviewable Markdown draft artifacts from manifest metadata, DevImg reports, changelog excerpts, and optional compare/review artifacts.
+- Added deterministic metadata-only draft output by default for release notes, README snippets, project-page copy, blog outlines, and social post outlines.
+- Added OpenAI text-only provider-backed drafting behind explicit `--ai-provider openai --model <model>`, with dry-run support that requires no API key and Anthropic real calls deferred.
+- Kept drafts as advisory prose only; DevImg does not publish, commit, post, or edit application content.
+- Updated CI smoke coverage, docs, release references, and dogfood guidance for `v0.2.6`.
+
 ## 0.2.5
 
 - Added `devimg alt` for opt-in OpenAI alt-text draft artifacts from manifest source images.

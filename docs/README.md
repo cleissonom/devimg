@@ -18,7 +18,7 @@ This directory contains public DevImg documentation for users, contributors, and
 
 ## AI Roadmap
 
-- `roadmap-v0.2-ai.md`: optional AI-assisted workflow plan. `0.2.0` through `0.2.3` are provider-safe setup and local-preview slices; `0.2.4` adds opt-in OpenAI AI review and `0.2.5` adds opt-in OpenAI alt-text drafts while deterministic commands remain offline.
+- `roadmap-v0.2-ai.md`: optional AI-assisted workflow plan. `0.2.0` through `0.2.3` are provider-safe setup and local-preview slices; `0.2.4` adds opt-in OpenAI AI review, `0.2.5` adds opt-in OpenAI alt-text drafts, and `0.2.6` adds reviewable draft helpers while deterministic commands remain offline.
 
 ## Dependency Compatibility
 

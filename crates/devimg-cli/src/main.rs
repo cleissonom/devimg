@@ -8,23 +8,27 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use devimg_core::{
     ai_alt_report_to_json, ai_consent_preview_to_json, ai_review_report_to_json,
     build_ai_alt_placeholder_report, build_ai_alt_report, build_ai_alt_request,
-    build_ai_consent_preview, build_ai_review_dry_run_report, build_ai_review_report,
+    build_ai_consent_preview, build_ai_draft_placeholder_report, build_ai_draft_report,
+    build_ai_draft_request, build_ai_review_dry_run_report, build_ai_review_report,
     build_ai_review_request, check_with_options, compare_manifests, doctor, doctor_report_to_json,
     inspect_image, load_config, manifest_compare_to_json, manifest_export_to_json,
     manifest_export_to_typescript_with_options, optimize, read_manifest, render_ai_alt_markdown,
-    render_ai_review_markdown, render_doctor_report, render_manifest_compare_report,
-    render_manifest_report, render_manifest_review, render_run_report, render_suggestion_markdown,
-    suggest, suggestion_report_to_json, AiAltOptions, AiAltProviderPayload, AiAltRequest,
-    AiConsentOptions, AiProvider, AiReviewOptions, AiReviewProviderPayload, AiReviewRequest,
-    CheckOptions, DevimgError, DoctorManifestExportFormat, DoctorManifestExportOptions,
-    DoctorOptions, ManifestCompareOptions, ManifestExportOptions, ManifestReviewOptions,
-    ManifestTypescriptOptions, OptimizeOptions, SuggestOptions, SuggestionItem, SuggestionReport,
+    render_ai_draft_markdown, render_ai_review_markdown, render_doctor_report,
+    render_manifest_compare_report, render_manifest_report, render_manifest_review,
+    render_run_report, render_suggestion_markdown, suggest, suggestion_report_to_json,
+    AiAltOptions, AiAltProviderPayload, AiAltRequest, AiConsentOptions, AiDraftOptions,
+    AiDraftProviderPayload, AiDraftRequest, AiDraftType, AiProvider, AiReviewOptions,
+    AiReviewProviderPayload, AiReviewRequest, CheckOptions, DevimgError,
+    DoctorManifestExportFormat, DoctorManifestExportOptions, DoctorOptions, ManifestCompareOptions,
+    ManifestExportOptions, ManifestReviewOptions, ManifestTypescriptOptions, OptimizeOptions,
+    SuggestOptions, SuggestionItem, SuggestionReport,
 };
 use serde_json::{json, Value};
 
 const DEFAULT_CONFIG_PATH: &str = "devimg.toml";
 const DEFAULT_AI_REVIEW_OUTPUT: &str = "devimg-ai-review.json";
 const DEFAULT_AI_ALT_OUTPUT: &str = "devimg-alt.json";
+const DEFAULT_AI_DRAFT_OUTPUT: &str = "devimg-draft.md";
 const DEFAULT_AI_REVIEW_MAX_IMAGES: usize = 8;
 
 fn main() {
@@ -88,6 +92,7 @@ where
         Command::Inspect(args) => command_inspect(args),
         Command::Suggest(args) => command_suggest(args),
         Command::Alt(args) => command_alt(args),
+        Command::Draft(args) => command_draft(args),
         Command::Manifest(args) => command_manifest(args),
         Command::Agent(args) => command_agent(args),
         Command::Ai(args) => command_ai(args),
@@ -120,6 +125,7 @@ enum Command {
     Inspect(InspectArgs),
     Suggest(SuggestArgs),
     Alt(AltArgs),
+    Draft(DraftArgs),
     Manifest(ManifestArgs),
     Agent(AgentArgs),
     Ai(AiArgs),
@@ -282,6 +288,34 @@ struct AltArgs {
     image_detail: AiImageDetailArg,
 }
 
+#[derive(Debug, Args)]
+struct DraftArgs {
+    #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
+    config: PathBuf,
+    #[arg(long = "draft-type", value_enum)]
+    draft_type: DraftTypeArg,
+    #[arg(long)]
+    metadata_only: bool,
+    #[arg(long = "ai-provider", value_enum)]
+    ai_provider: Option<AiProviderArg>,
+    #[arg(long)]
+    model: Option<String>,
+    #[arg(long)]
+    dry_run: bool,
+    #[arg(long)]
+    output: Option<PathBuf>,
+    #[arg(long)]
+    force: bool,
+    #[arg(long = "compare-json")]
+    compare_json: Option<PathBuf>,
+    #[arg(long = "ai-review-json")]
+    ai_review_json: Option<PathBuf>,
+    #[arg(long = "review-html")]
+    review_html: Option<PathBuf>,
+    #[arg(long)]
+    changelog: Option<PathBuf>,
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum SuggestFailSeverity {
     Advisory,
@@ -419,6 +453,15 @@ struct AiConsentArgs {
 enum AiProviderArg {
     Openai,
     Anthropic,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum DraftTypeArg {
+    ReleaseNotes,
+    ReadmeSnippet,
+    ProjectPageCopy,
+    BlogOutline,
+    SocialPostOutline,
 }
 
 fn command_init(args: InitArgs) -> Result<(), CliError> {
@@ -867,7 +910,7 @@ fn command_alt(args: AltArgs) -> Result<(), CliError> {
     if args.include_images && provider != AiProvider::Openai {
         return Err(CliError::Core(DevimgError::config(
             &args.config,
-            "devimg alt supports OpenAI image-backed alt-text generation only in 0.2.5; Anthropic alt text is deferred",
+            "devimg alt supports OpenAI image-backed alt-text generation only in this release; Anthropic alt text is deferred",
         )));
     }
 
@@ -936,6 +979,99 @@ fn command_alt(args: AltArgs) -> Result<(), CliError> {
         println!("Created {}", markdown.display());
     }
 
+    Ok(())
+}
+
+fn command_draft(args: DraftArgs) -> Result<(), CliError> {
+    if args.metadata_only && args.ai_provider.is_some() {
+        return Err(CliError::Core(DevimgError::config(
+            &args.config,
+            "--metadata-only cannot be combined with --ai-provider",
+        )));
+    }
+    if let Some(model) = &args.model {
+        if model.trim().is_empty() {
+            return Err(CliError::Core(DevimgError::config(
+                &args.config,
+                "--model cannot be empty",
+            )));
+        }
+    }
+
+    let provider = args.ai_provider.map(AiProviderArg::into_core);
+    let model = if provider.is_some() {
+        Some(args.model.clone().ok_or_else(|| {
+            CliError::Core(DevimgError::config(
+                &args.config,
+                "devimg draft with --ai-provider requires --model",
+            ))
+        })?)
+    } else {
+        if args.model.is_some() {
+            return Err(CliError::Core(DevimgError::config(
+                &args.config,
+                "--model requires --ai-provider",
+            )));
+        }
+        None
+    };
+
+    let config = load_config(&args.config)?;
+    let output = args
+        .output
+        .clone()
+        .unwrap_or_else(|| config.project.root.join(DEFAULT_AI_DRAFT_OUTPUT));
+    if output.exists() && !args.force {
+        return Err(CliError::Core(DevimgError::UnsafeOverwrite {
+            path: output,
+        }));
+    }
+
+    if matches!(provider, Some(AiProvider::Anthropic)) && !args.dry_run {
+        return Err(CliError::Core(DevimgError::config(
+            &args.config,
+            "Anthropic draft generation is deferred in this release; use --dry-run or --ai-provider openai",
+        )));
+    }
+
+    let changelog_path = args.changelog.clone().or_else(|| {
+        let default = config.project.root.join("CHANGELOG.md");
+        default.exists().then_some(default)
+    });
+    let request = build_ai_draft_request(
+        &config,
+        &AiDraftOptions {
+            draft_type: args.draft_type.into_core(),
+            provider,
+            model: model.clone(),
+            command: "devimg draft".to_string(),
+            config_path: args.config.clone(),
+            project_root: config.project.root.clone(),
+            output_path: output.clone(),
+            dry_run: args.dry_run,
+            compare_json_path: args.compare_json.clone(),
+            ai_review_json_path: args.ai_review_json.clone(),
+            review_html_path: args.review_html.clone(),
+            changelog_path,
+        },
+    );
+
+    let report = match provider {
+        Some(AiProvider::Openai) if !args.dry_run => {
+            let key = read_ai_provider_key(
+                &args.config,
+                AiProvider::Openai,
+                std::slice::from_ref(&config.project.root),
+                "devimg draft",
+            )?;
+            let payload = call_openai_draft(&request, &key)?;
+            build_ai_draft_report(&request, payload, true)
+        }
+        _ => build_ai_draft_placeholder_report(&request),
+    };
+
+    write_text_file(&output, &render_ai_draft_markdown(&report))?;
+    println!("Created {}", output.display());
     Ok(())
 }
 
@@ -1393,12 +1529,97 @@ fn build_openai_alt_body(request: &AiAltRequest, project_root: &Path) -> Result<
     }))
 }
 
+fn call_openai_draft(
+    request: &AiDraftRequest,
+    api_key: &str,
+) -> Result<AiDraftProviderPayload, CliError> {
+    let body = build_openai_draft_body(request);
+    let client = reqwest::blocking::Client::builder().build().map_err(|_| {
+        CliError::Core(DevimgError::config(
+            &request.config_path,
+            "failed to construct OpenAI HTTP client",
+        ))
+    })?;
+    let response = client
+        .post("https://api.openai.com/v1/responses")
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .map_err(|_| {
+            CliError::Core(DevimgError::config(
+                &request.config_path,
+                "OpenAI Responses API request failed before a response was received",
+            ))
+        })?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(CliError::Core(DevimgError::config(
+            &request.config_path,
+            format!(
+                "OpenAI Responses API request failed with HTTP status {}",
+                status.as_u16()
+            ),
+        )));
+    }
+    let value: Value = response.json().map_err(|_| {
+        CliError::Core(DevimgError::config(
+            &request.config_path,
+            "OpenAI response was not valid JSON",
+        ))
+    })?;
+    let output_text = extract_openai_output_text(&value).ok_or_else(|| {
+        CliError::Core(DevimgError::config(
+            &request.config_path,
+            "OpenAI response did not include draft JSON",
+        ))
+    })?;
+    serde_json::from_str::<AiDraftProviderPayload>(output_text.trim()).map_err(|_| {
+        CliError::Core(DevimgError::config(
+            &request.config_path,
+            "OpenAI response did not match the DevImg draft schema",
+        ))
+    })
+}
+
+fn build_openai_draft_body(request: &AiDraftRequest) -> Value {
+    json!({
+        "model": request.model.as_deref().unwrap_or(""),
+        "input": [
+            {
+                "role": "developer",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": openai_draft_developer_text(),
+                    }
+                ]
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": openai_draft_user_text(request),
+                    }
+                ]
+            }
+        ],
+        "text": {
+            "format": openai_draft_text_format()
+        }
+    })
+}
+
 fn openai_review_developer_text() -> &'static str {
     "You are reviewing DevImg-generated web image variants. Return JSON that matches the supplied schema. Treat every observation as advisory. Do not suggest editing generated image files by hand. Do not include secrets, API keys, data URLs, or raw image bytes. Focus only on crop risk, readability risk, excessive padding, low-resolution source, format-quality concern, and accessibility note."
 }
 
 fn openai_alt_developer_text() -> &'static str {
     "You draft concise web image alt text from DevImg metadata and image inputs. Return JSON that matches the supplied schema. Draft one record per source_path. Alt text is draft content for human review only. Do not include secrets, API keys, data URLs, raw image bytes, markdown, file names as descriptions, or instructions to edit application code. Prefer empty candidate_alt_text for decorative images. Warn for decorative images, text-heavy images, logos, screenshots, and uncertain descriptions."
+}
+
+fn openai_draft_developer_text() -> &'static str {
+    "You draft human-reviewed DevImg prose artifacts from text-only metadata. Return JSON that matches the supplied schema. The output is draft Markdown content for human review only. Do not publish, commit, post, or claim to edit application content. Do not include secrets, API keys, data URLs, raw provider responses, image bytes, or base64. Keep claims grounded in the supplied manifest, report, changelog, and optional artifact summaries."
 }
 
 fn openai_image_detail(detail: &str) -> &str {
@@ -1422,6 +1643,15 @@ fn openai_alt_user_text(request: &AiAltRequest) -> String {
         serde_json::to_string_pretty(request).expect("AI alt request serialization cannot fail");
     format!(
         "Draft alt text for these DevImg source images using the metadata and selected image inputs. Return JSON only. Metadata:\n{metadata}"
+    )
+}
+
+fn openai_draft_user_text(request: &AiDraftRequest) -> String {
+    let metadata =
+        serde_json::to_string_pretty(request).expect("AI draft request serialization cannot fail");
+    format!(
+        "Draft {} content from this DevImg metadata and optional text artifacts. Return JSON only. Metadata:\n{metadata}",
+        request.draft_type.label()
     )
 }
 
@@ -1545,6 +1775,38 @@ fn openai_alt_text_format() -> Value {
                 }
             },
             "required": ["summary", "drafts"]
+        }
+    })
+}
+
+fn openai_draft_text_format() -> Value {
+    json!({
+        "type": "json_schema",
+        "name": "devimg_draft",
+        "strict": true,
+        "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "summary": { "type": "string" },
+                "sections": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "heading": { "type": "string" },
+                            "body": { "type": "string" },
+                            "bullets": {
+                                "type": "array",
+                                "items": { "type": "string" }
+                            }
+                        },
+                        "required": ["heading", "body", "bullets"]
+                    }
+                }
+            },
+            "required": ["summary", "sections"]
         }
     })
 }
@@ -1960,6 +2222,18 @@ impl AiProviderArg {
         match self {
             Self::Openai => AiProvider::Openai,
             Self::Anthropic => AiProvider::Anthropic,
+        }
+    }
+}
+
+impl DraftTypeArg {
+    fn into_core(self) -> AiDraftType {
+        match self {
+            Self::ReleaseNotes => AiDraftType::ReleaseNotes,
+            Self::ReadmeSnippet => AiDraftType::ReadmeSnippet,
+            Self::ProjectPageCopy => AiDraftType::ProjectPageCopy,
+            Self::BlogOutline => AiDraftType::BlogOutline,
+            Self::SocialPostOutline => AiDraftType::SocialPostOutline,
         }
     }
 }

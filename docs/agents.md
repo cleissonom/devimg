@@ -115,7 +115,7 @@ AI commands may read ignored `.env` files for `OPENAI_API_KEY`, but deterministi
 
 ## OpenAI Alt-Text Drafts
 
-Use `devimg alt` only for reviewable draft alt text. Metadata-only is the default and writes placeholder records without API keys, provider calls, or image uploads. In `0.2.5`, real alt-text generation is OpenAI-only and requires explicit `--include-images`.
+Use `devimg alt` only for reviewable draft alt text. Metadata-only is the default and writes placeholder records without API keys, provider calls, or image uploads. Real alt-text generation is OpenAI-only and requires explicit `--include-images`.
 
 ```bash
 devimg alt --ai-provider openai --model "$DEVIMG_OPENAI_TEST_MODEL" --dry-run --output /tmp/devimg-alt.json
@@ -123,6 +123,17 @@ devimg alt --ai-provider openai --model "$DEVIMG_OPENAI_TEST_MODEL" --include-im
 ```
 
 Alt output is draft content only. Agents must not insert it into application code without human review, and must not pass `--include-images` unless a human has explicitly approved sending selected image bytes.
+
+## Draft Helpers
+
+Use `devimg draft` only for reviewable Markdown prose drafts. Metadata-only is the default and writes local draft sections from DevImg metadata and optional text artifacts without API keys or provider calls. Real provider-backed drafting is OpenAI-only and text-only in this release; Anthropic real drafting is deferred.
+
+```bash
+devimg draft --draft-type project-page-copy --output /tmp/devimg-project-page-copy.md --force
+devimg draft --draft-type release-notes --ai-provider openai --model "$DEVIMG_OPENAI_TEST_MODEL" --dry-run --output /tmp/devimg-release-notes.md --force
+```
+
+Draft output is advisory prose only. Agents must not publish it, post it, commit it, or paste it into README, changelog, project pages, blog posts, social posts, source images, generated images, manifests, configs, or application code without explicit human review.
 
 ## Generated Instructions
 
