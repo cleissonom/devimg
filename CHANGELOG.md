@@ -4,7 +4,9 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 ## Unreleased
 
-No unreleased changes.
+- Bumped the workspace to `0.2.0` and added `devimg agent task` for local-only Markdown task contracts for Codex, Claude Code, and generic agents.
+- Added `agent task --agent codex|claude-code|generic`, stdout output by default, `--output <path>`, overwrite protection through `--force`, and protection for existing agent instruction paths.
+- Documented the `agent task` workflow, generated task context, safe output handling, and the deferred status of provider-backed AI features.
 
 ## 0.1.16
 

@@ -30,6 +30,18 @@ Regenerate those files with DevImg commands instead.
 
 ## Required Workflow
 
+Generate task context before editing when an agent needs the current DevImg state:
+
+```bash
+devimg agent task --agent codex
+devimg agent task --agent claude-code
+devimg agent task --agent generic
+```
+
+`devimg agent task` reads `devimg.toml` by default, prints Markdown to stdout by default, supports `--config <path>`, and can write a task file with `--output <path>`. It refuses to replace existing output unless `--force` is passed, and it refuses agent instruction paths such as `AGENTS.md`, `CLAUDE.md`, `.claude/**`, `.codex/**`, `.cursor/**`, and `.github/copilot-instructions.md`.
+
+The generated task context includes doctor checks, issues, warnings, acknowledged warnings, detected frameworks, manifest helper paths, generated artifact paths, file ownership guidance, regeneration commands, next commands, and expected final-response guidance for the selected agent.
+
 Run this loop when image sources, config, generated variants, manifests, reports, or helper files may change:
 
 ```bash
