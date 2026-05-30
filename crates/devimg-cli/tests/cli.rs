@@ -15,7 +15,7 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["review", "--help"]), 0);
     let version = run(["--version"]);
     assert_status(&version, 0);
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.1"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.2"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -53,7 +53,9 @@ fn optimize_and_check_success() {
     let project = fixture_project("success", "sample.png");
     let config = path_arg(project.join("devimg.toml"));
 
-    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    let optimize = run(["optimize", "--config", config.as_str()]);
+    assert_status(&optimize, 0);
+    assert!(!String::from_utf8_lossy(&optimize.stdout).contains("devimg suggest --metadata-only"));
     assert!(project
         .join("public/images/generated/sample.project-card.64.webp")
         .exists());
@@ -1227,18 +1229,34 @@ max_total_bytes = "5mb"
 
     let optimize = run(["optimize", "--config", config.as_str()]);
     assert_status(&optimize, 0);
-    assert!(String::from_utf8_lossy(&optimize.stdout).contains("quality:"));
+    let optimize_stdout = String::from_utf8_lossy(&optimize.stdout);
+    assert!(optimize_stdout.contains("quality:"));
+    assert!(optimize_stdout.contains("devimg suggest --metadata-only --config"));
+    assert!(optimize_stdout.contains("--check --fail-on-severity warning"));
     assert!(fs::read_to_string(project.join("devimg-report.md"))
         .expect("report reads")
         .contains("quality:"));
+    assert!(fs::read_to_string(project.join("devimg-report.md"))
+        .expect("report reads")
+        .contains("devimg suggest --metadata-only --config"));
 
     let default_check = run(["check", "--config", config.as_str()]);
     assert_status(&default_check, 0);
-    assert!(String::from_utf8_lossy(&default_check.stdout).contains("quality:"));
+    let check_stdout = String::from_utf8_lossy(&default_check.stdout);
+    assert!(check_stdout.contains("quality:"));
+    assert!(check_stdout.contains("devimg suggest --metadata-only --config"));
 
     let strict_check = run(["check", "--config", config.as_str(), "--fail-on-warning"]);
     assert_status(&strict_check, 3);
     assert!(String::from_utf8_lossy(&strict_check.stderr).contains("quality:"));
+    assert!(String::from_utf8_lossy(&strict_check.stderr)
+        .contains("devimg suggest --metadata-only --config"));
+
+    let doctor_human = run(["doctor", "--config", config.as_str()]);
+    assert_status(&doctor_human, 0);
+    let doctor_stdout = String::from_utf8_lossy(&doctor_human.stdout);
+    assert!(doctor_stdout.contains("Suggestions"));
+    assert!(doctor_stdout.contains("devimg suggest --metadata-only --config"));
 
     let doctor = run(["doctor", "--config", config.as_str(), "--json"]);
     assert_status(&doctor, 0);
@@ -1827,6 +1845,214 @@ fn suggest_default_output_is_valid_empty_json_and_deterministic() {
 }
 
 #[test]
+fn suggest_check_is_read_only_when_no_suggestions_block() {
+    let project = fixture_project("suggest_check_read_only", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    let output = run([
+        "suggest",
+        "--metadata-only",
+        "--check",
+        "--config",
+        config.as_str(),
+    ]);
+
+    assert_status(&output, 0);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("DevImg Suggestions Summary"));
+    assert!(stdout.contains("- Suggestions: `0`"));
+    assert!(stdout.contains("- Check threshold: `warning`"));
+    assert!(stdout.contains("- Blocking suggestions: `0`"));
+    assert!(stdout.contains("no output written (read-only check)"));
+    assert!(!project.join("devimg-suggestions.json").exists());
+    cleanup(&project);
+}
+
+#[test]
+fn suggest_check_thresholds_handle_warnings_errors_and_advisories() {
+    let warning_project = fixture_project("suggest_check_warning", "sample.png");
+    let warning_config = path_arg(warning_project.join("devimg.toml"));
+    assert_code(run(["optimize", "--config", warning_config.as_str()]), 0);
+    fs::remove_file(warning_project.join("devimg-report.md")).expect("remove report");
+
+    let warning_gate = run([
+        "suggest",
+        "--metadata-only",
+        "--check",
+        "--config",
+        warning_config.as_str(),
+    ]);
+    assert_status(&warning_gate, 3);
+    let stderr = String::from_utf8_lossy(&warning_gate.stderr);
+    assert!(stderr.contains("- Check threshold: `warning`"));
+    assert!(stderr.contains("- Blocking suggestions: `1`"));
+    assert!(stderr.contains("no output written (read-only check)"));
+    assert!(!warning_project.join("devimg-suggestions.json").exists());
+
+    let error_only_gate = run([
+        "suggest",
+        "--metadata-only",
+        "--check",
+        "--fail-on-severity",
+        "error",
+        "--config",
+        warning_config.as_str(),
+    ]);
+    assert_status(&error_only_gate, 0);
+    assert!(
+        String::from_utf8_lossy(&error_only_gate.stdout).contains("- Blocking suggestions: `0`")
+    );
+    cleanup(&warning_project);
+
+    let advisory_project = temp_project("suggest_check_advisory");
+    let source = advisory_project.join("assets/images/hero-screenshot.png");
+    fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+    fs::copy(fixture_image(), &source).expect("copy fixture image");
+    fs::write(
+        advisory_project.join("devimg.toml"),
+        r#"[project]
+root = "."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png"]
+
+[[preset]]
+name = "hero"
+widths = [64]
+formats = ["webp"]
+quality = 74
+fit = "cover"
+aspect_ratio = "16:9"
+
+[budgets]
+max_total_bytes = "5mb"
+"#,
+    )
+    .expect("write advisory config");
+    let advisory_config = path_arg(advisory_project.join("devimg.toml"));
+    assert_code(run(["optimize", "--config", advisory_config.as_str()]), 0);
+
+    let default_gate = run([
+        "suggest",
+        "--metadata-only",
+        "--check",
+        "--config",
+        advisory_config.as_str(),
+    ]);
+    assert_status(&default_gate, 0);
+    assert!(String::from_utf8_lossy(&default_gate.stdout).contains("- Blocking suggestions: `0`"));
+
+    let advisory_gate = run([
+        "suggest",
+        "--metadata-only",
+        "--check",
+        "--fail-on-severity",
+        "advisory",
+        "--config",
+        advisory_config.as_str(),
+    ]);
+    assert_status(&advisory_gate, 3);
+    assert!(
+        String::from_utf8_lossy(&advisory_gate.stderr).contains("- Check threshold: `advisory`")
+    );
+    cleanup(&advisory_project);
+}
+
+#[test]
+fn suggest_fail_on_severity_requires_check() {
+    let project = fixture_project("suggest_fail_on_severity_requires_check", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    let output = run([
+        "suggest",
+        "--metadata-only",
+        "--fail-on-severity",
+        "warning",
+        "--config",
+        config.as_str(),
+    ]);
+
+    assert_status(&output, 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--fail-on-severity requires --check"));
+    assert!(!project.join("devimg-suggestions.json").exists());
+    cleanup(&project);
+}
+
+#[test]
+fn suggest_check_explicit_outputs_write_and_preflight_are_safe() {
+    let project = fixture_project("suggest_check_explicit_outputs", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    let json = project.join("out/check-suggestions.json");
+    let markdown = project.join("out/check-suggestions.md");
+    let json_arg = path_arg(json.clone());
+    let markdown_arg = path_arg(markdown.clone());
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    assert_code(
+        run([
+            "suggest",
+            "--metadata-only",
+            "--check",
+            "--config",
+            config.as_str(),
+            "--output",
+            json_arg.as_str(),
+            "--markdown",
+            markdown_arg.as_str(),
+        ]),
+        0,
+    );
+    assert!(fs::read_to_string(&json)
+        .expect("check json reads")
+        .contains("\"items\": []"));
+    assert!(fs::read_to_string(&markdown)
+        .expect("check markdown reads")
+        .contains("No suggestions."));
+    assert!(!project.join("devimg-suggestions.json").exists());
+
+    fs::write(&json, "existing json\n").expect("write existing json");
+    let refused = run([
+        "suggest",
+        "--metadata-only",
+        "--check",
+        "--config",
+        config.as_str(),
+        "--output",
+        json_arg.as_str(),
+        "--markdown",
+        markdown_arg.as_str(),
+    ]);
+    assert_status(&refused, 4);
+    assert_eq!(
+        fs::read_to_string(&json).expect("json reads"),
+        "existing json\n"
+    );
+
+    fs::remove_file(project.join("devimg-report.md")).expect("remove report");
+    let failing_json = project.join("out/failing-check.json");
+    let failing_json_arg = path_arg(failing_json.clone());
+    let failed_gate = run([
+        "suggest",
+        "--metadata-only",
+        "--check",
+        "--config",
+        config.as_str(),
+        "--output",
+        failing_json_arg.as_str(),
+    ]);
+    assert_status(&failed_gate, 3);
+    assert!(failing_json.exists());
+    cleanup(&project);
+}
+
+#[test]
 fn suggest_custom_output_markdown_force_and_preflight_are_safe() {
     let project = fixture_project("suggest_custom_output", "sample.png");
     let config = path_arg(project.join("devimg.toml"));
@@ -2003,6 +2229,14 @@ max_total_bytes = "5mb"
     assert_eq!(quality["source_path"], "assets/images/hero-screenshot.png");
     assert_eq!(quality["preset"], "hero");
     assert_eq!(quality["format"], "webp");
+    assert_eq!(
+        quality["affected_path"],
+        "assets/images/hero-screenshot.png"
+    );
+    assert_eq!(
+        quality["next_command"],
+        "devimg optimize --config config/devimg.toml --allow-overwrite"
+    );
     assert_eq!(quality["suggested_config"]["target"], "preset");
     assert_eq!(quality["suggested_config"]["changes"]["quality"], 82);
     cleanup(&project);

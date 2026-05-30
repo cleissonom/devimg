@@ -4,6 +4,14 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 ## Unreleased
 
+## 0.2.2
+
+- Added `devimg suggest --check` for read-only local and CI suggestion gates.
+- Added `--fail-on-severity advisory|warning|error`, stable terminal summaries, and explicit blocking counts for suggestion checks.
+- Added `affected_path` and `next_command` fields to deterministic suggestion items.
+- Added suggestion commands to human doctor output and check/optimize Markdown reports when active or acknowledged warnings exist.
+- Updated dogfood docs, CI smoke coverage, and public release references for `v0.2.2`.
+
 ## 0.2.1
 
 - Added `devimg suggest --metadata-only` for deterministic local suggestion files generated from existing DevImg diagnostics.

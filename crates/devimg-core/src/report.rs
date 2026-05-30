@@ -45,6 +45,9 @@ pub fn render_run_report(result: &OptimizeResult) -> String {
             out.push_str(&format!("- {warning}\n"));
         }
     }
+    if !result.warnings.is_empty() || !result.acknowledged_warnings.is_empty() {
+        push_suggestion_commands(&mut out, "## Suggestions", &result.manifest.config_path);
+    }
     if !result.issues.is_empty() {
         out.push_str("\n## Check Issues\n\n");
         for issue in &result.issues {
@@ -243,8 +246,50 @@ pub fn render_doctor_report(report: &DoctorReport) -> String {
         }
     }
 
+    if !report.warnings.is_empty() || !report.acknowledged_warnings.is_empty() {
+        push_suggestion_commands(&mut out, "Suggestions", &report.config_path);
+    }
+
     out.push_str(&format!("\nNext: {}\n", report.next_command));
     out
+}
+
+fn push_suggestion_commands(out: &mut String, heading: &str, config_path: &str) {
+    out.push_str(&format!("\n{heading}\n\n"));
+    out.push_str(&format!(
+        "- Review suggestions: `{}`\n",
+        suggest_command(config_path)
+    ));
+    out.push_str(&format!(
+        "- CI gate: `{}`\n",
+        suggest_check_command(config_path)
+    ));
+}
+
+fn suggest_command(config_path: &str) -> String {
+    format!(
+        "devimg suggest --metadata-only --config {}",
+        shell_arg(config_path)
+    )
+}
+
+fn suggest_check_command(config_path: &str) -> String {
+    format!(
+        "devimg suggest --metadata-only --check --fail-on-severity warning --config {}",
+        shell_arg(config_path)
+    )
+}
+
+fn shell_arg(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '/' | '.' | '_' | '-' | ':' | '@'))
+    {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
 }
 
 fn push_compare_outputs(out: &mut String, outputs: &[ManifestCompareOutput], empty: &str) {

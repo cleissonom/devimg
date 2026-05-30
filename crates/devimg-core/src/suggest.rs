@@ -52,6 +52,7 @@ pub struct SuggestionItem {
     pub source_path: Option<String>,
     pub source_kind: Option<String>,
     pub output_path: Option<String>,
+    pub affected_path: String,
     pub preset: Option<String>,
     pub width: Option<u32>,
     pub format: Option<String>,
@@ -61,6 +62,7 @@ pub struct SuggestionItem {
     pub rationale: String,
     pub suggested_config: Option<SuggestedConfigPatch>,
     pub commands: Vec<String>,
+    pub next_command: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -189,15 +191,9 @@ pub fn render_suggestion_markdown(report: &SuggestionReport) -> String {
     }
 
     for item in &report.items {
-        let location = item
-            .output_path
-            .as_ref()
-            .or(item.source_path.as_ref())
-            .map(String::as_str)
-            .unwrap_or(".");
         out.push_str(&format!(
             "- `{}` `{}` at `{}`: {}\n",
-            item.severity, item.warning_code, location, item.rationale
+            item.severity, item.warning_code, item.affected_path, item.rationale
         ));
         if let Some(patch) = &item.suggested_config {
             let changes = serde_json::to_string(&patch.changes)
@@ -215,6 +211,9 @@ pub fn render_suggestion_markdown(report: &SuggestionReport) -> String {
             for command in &item.commands {
                 out.push_str(&format!("    - `{command}`\n"));
             }
+        }
+        if !item.next_command.is_empty() {
+            out.push_str(&format!("  - Next command: `{}`\n", item.next_command));
         }
     }
 
@@ -361,12 +360,20 @@ fn suggestion_from_diagnostic(
     let suggested_config = suggested_config_patch(&diagnostic.code, &fields, message);
     let commands = commands_for_diagnostic(config, diagnostic, &fields);
     let id = suggestion_id(diagnostic, &fields, severity, acknowledged);
+    let affected_path = fields
+        .output_path
+        .as_deref()
+        .or(fields.source_path.as_deref())
+        .unwrap_or(diagnostic.path.as_str())
+        .to_string();
+    let next_command = commands.first().cloned().unwrap_or_default();
 
     SuggestionItem {
         id,
         source_path: fields.source_path,
         source_kind,
         output_path: fields.output_path,
+        affected_path,
         preset: fields.preset,
         width: fields.width,
         format: fields.format,
@@ -376,6 +383,7 @@ fn suggestion_from_diagnostic(
         rationale: diagnostic.message.clone(),
         suggested_config,
         commands,
+        next_command,
     }
 }
 

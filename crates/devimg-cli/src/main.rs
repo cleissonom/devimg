@@ -12,7 +12,7 @@ use devimg_core::{
     render_run_report, render_suggestion_markdown, suggest, suggestion_report_to_json,
     CheckOptions, DevimgError, DoctorManifestExportFormat, DoctorManifestExportOptions,
     DoctorOptions, ManifestCompareOptions, ManifestExportOptions, ManifestReviewOptions,
-    ManifestTypescriptOptions, OptimizeOptions, SuggestOptions,
+    ManifestTypescriptOptions, OptimizeOptions, SuggestOptions, SuggestionItem, SuggestionReport,
 };
 
 const DEFAULT_CONFIG_PATH: &str = "devimg.toml";
@@ -43,6 +43,10 @@ fn main() {
             } else {
                 eprintln!("{report}");
             }
+            3
+        }
+        Err(CliError::SuggestCheckFailed(report)) => {
+            eprintln!("{report}");
             3
         }
         Err(CliError::Core(error)) => {
@@ -207,11 +211,22 @@ struct SuggestArgs {
     #[arg(long)]
     metadata_only: bool,
     #[arg(long)]
+    check: bool,
+    #[arg(long, value_enum)]
+    fail_on_severity: Option<SuggestFailSeverity>,
+    #[arg(long)]
     output: Option<PathBuf>,
     #[arg(long)]
     markdown: Option<PathBuf>,
     #[arg(long)]
     force: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SuggestFailSeverity {
+    Advisory,
+    Warning,
+    Error,
 }
 
 #[derive(Debug, Args)]
@@ -492,21 +507,39 @@ fn command_suggest(args: SuggestArgs) -> Result<(), CliError> {
             "devimg suggest currently requires --metadata-only",
         )));
     }
+    if args.fail_on_severity.is_some() && !args.check {
+        return Err(CliError::Core(DevimgError::config(
+            &args.config,
+            "--fail-on-severity requires --check",
+        )));
+    }
 
     let config = load_config(&args.config)?;
-    let json_output = args
-        .output
-        .unwrap_or_else(|| config.project.root.join("devimg-suggestions.json"));
-    if let Some(markdown) = &args.markdown {
-        if comparable_output_path(markdown)? == comparable_output_path(&json_output)? {
+    let threshold = args
+        .fail_on_severity
+        .unwrap_or(SuggestFailSeverity::Warning);
+    let json_output = if args.check {
+        args.output.clone()
+    } else {
+        Some(
+            args.output
+                .clone()
+                .unwrap_or_else(|| config.project.root.join("devimg-suggestions.json")),
+        )
+    };
+    if let (Some(markdown), Some(json_output)) = (&args.markdown, &json_output) {
+        if comparable_output_path(markdown)? == comparable_output_path(json_output)? {
             return Err(CliError::Core(DevimgError::config(
-                &json_output,
+                json_output,
                 "--output and --markdown must use different paths",
             )));
         }
     }
 
-    let mut outputs = vec![json_output.clone()];
+    let mut outputs = Vec::new();
+    if let Some(json_output) = &json_output {
+        outputs.push(json_output.clone());
+    }
     if let Some(markdown) = &args.markdown {
         outputs.push(markdown.clone());
     }
@@ -524,15 +557,79 @@ fn command_suggest(args: SuggestArgs) -> Result<(), CliError> {
             metadata_only: args.metadata_only,
         },
     )?;
-    write_text_file(&json_output, &suggestion_report_to_json(&report))?;
-    println!("Created {}", json_output.display());
+    if let Some(json_output) = &json_output {
+        write_text_file(json_output, &suggestion_report_to_json(&report))?;
+        println!("Created {}", json_output.display());
+    }
 
     if let Some(markdown) = args.markdown {
         write_text_file(&markdown, &render_suggestion_markdown(&report))?;
         println!("Created {}", markdown.display());
     }
 
-    Ok(())
+    let blocking_count = if args.check {
+        blocking_suggestion_count(&report, threshold)
+    } else {
+        0
+    };
+    let summary =
+        render_suggest_terminal_summary(&report, args.check, threshold, blocking_count, &outputs);
+    if args.check && blocking_count > 0 {
+        Err(CliError::SuggestCheckFailed(summary))
+    } else {
+        print!("{summary}");
+        Ok(())
+    }
+}
+
+fn blocking_suggestion_count(report: &SuggestionReport, threshold: SuggestFailSeverity) -> usize {
+    report
+        .items
+        .iter()
+        .filter(|item| suggestion_blocks(item, threshold))
+        .count()
+}
+
+fn suggestion_blocks(item: &SuggestionItem, threshold: SuggestFailSeverity) -> bool {
+    match threshold {
+        SuggestFailSeverity::Error => item.severity == "error",
+        SuggestFailSeverity::Warning => {
+            item.severity == "error" || (item.severity == "warning" && !item.acknowledged)
+        }
+        SuggestFailSeverity::Advisory => true,
+    }
+}
+
+fn render_suggest_terminal_summary(
+    report: &SuggestionReport,
+    check: bool,
+    threshold: SuggestFailSeverity,
+    blocking_count: usize,
+    outputs: &[PathBuf],
+) -> String {
+    let mut out = String::new();
+    out.push_str("DevImg Suggestions Summary\n");
+    out.push_str(&format!(
+        "- Suggestions: `{}`\n",
+        report.summary.suggestion_count
+    ));
+    out.push_str(&format!("- Errors: `{}`\n", report.summary.error_count));
+    out.push_str(&format!("- Warnings: `{}`\n", report.summary.warning_count));
+    out.push_str(&format!(
+        "- Advisories: `{}`\n",
+        report.summary.advisory_count
+    ));
+    if check {
+        out.push_str(&format!("- Check threshold: `{}`\n", threshold.label()));
+        out.push_str(&format!("- Blocking suggestions: `{blocking_count}`\n"));
+        if outputs.is_empty() {
+            out.push_str("- Output: no output written (read-only check)\n");
+        }
+    }
+    for output in outputs {
+        out.push_str(&format!("- Output written: `{}`\n", output.display()));
+    }
+    out
 }
 
 fn command_manifest(args: ManifestArgs) -> Result<(), CliError> {
@@ -705,6 +802,9 @@ fn render_core_error(error: &DevimgError) -> String {
             if message == "devimg suggest currently requires --metadata-only" =>
         {
             out.push_str("\nHint: run `devimg suggest --metadata-only` to generate deterministic local suggestions.");
+        }
+        DevimgError::Config { message, .. } if message == "--fail-on-severity requires --check" => {
+            out.push_str("\nHint: run `devimg suggest --metadata-only --check --fail-on-severity warning` for a suggestion gate.");
         }
         DevimgError::Config { path, message } if message == "config file not found" => {
             out.push_str(&format!(
@@ -914,6 +1014,16 @@ impl ManifestExportFormat {
         match self {
             Self::Json => "json",
             Self::Typescript => "typescript",
+        }
+    }
+}
+
+impl SuggestFailSeverity {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Advisory => "advisory",
+            Self::Warning => "warning",
+            Self::Error => "error",
         }
     }
 }
@@ -1193,7 +1303,7 @@ impl AgentTaskAgent {
     fn final_response_guidance(self) -> &'static str {
         match self {
             Self::Codex => {
-                "Codex final response: summarize changed source/config files, regenerated artifacts, verification commands with pass/fail results, intentionally deferred 0.2.1+ behavior, and any remaining risks or follow-up items."
+                "Codex final response: summarize changed source/config files, regenerated artifacts, verification commands with pass/fail results, intentionally deferred provider-backed behavior, and any remaining risks or follow-up items."
             }
             Self::ClaudeCode => {
                 "Claude Code final response: use concise Markdown sections for Summary, Tests, Deferred Work, and Risks; mention that the task stayed local-only and that existing agent instruction files were not overwritten."
@@ -1467,6 +1577,7 @@ enum CliError {
     Core(DevimgError),
     CheckFailed(String),
     DoctorFailed { report: String, json: bool },
+    SuggestCheckFailed(String),
 }
 
 impl From<DevimgError> for CliError {

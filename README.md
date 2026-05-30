@@ -54,6 +54,7 @@ Useful commands:
 cargo run -p devimg -- doctor --config examples/portfolio/devimg.toml
 cargo run -p devimg -- doctor --config examples/portfolio/devimg.toml --json
 cargo run -p devimg -- suggest --metadata-only --config examples/portfolio/devimg.toml --output /tmp/devimg-suggestions.json
+cargo run -p devimg -- suggest --metadata-only --check --fail-on-severity warning --config examples/portfolio/devimg.toml
 cargo run -p devimg -- agent task --config examples/portfolio/devimg.toml --agent codex
 cargo run -p devimg -- agent init --target both --stdout
 cargo run -p devimg -- optimize --config examples/portfolio/devimg.toml --dry-run
@@ -284,14 +285,19 @@ Use `suggest --metadata-only` to convert existing DevImg diagnostics into stable
 
 ```bash
 devimg suggest --metadata-only
+devimg suggest --metadata-only --check
+devimg suggest --metadata-only --check --fail-on-severity error
 devimg suggest --metadata-only --output devimg-suggestions.json
 devimg suggest --metadata-only --markdown devimg-suggestions.md
+devimg suggest --metadata-only --check --output /tmp/devimg-suggestions.json --markdown /tmp/devimg-suggestions.md
 devimg suggest --metadata-only --output devimg-suggestions.json --markdown devimg-suggestions.md --force
 ```
 
 The JSON output defaults to `devimg-suggestions.json` under the configured project root. Use `--config <path>` when the project does not use the default `devimg.toml`. Existing JSON or Markdown outputs are protected unless `--force` is passed.
 
-Suggestions include schema version, config path, mode, summary counts, affected source/output metadata when DevImg can prove it, severity, rationale, structured `suggested_config` data, and next commands. The output is deterministic and diffable, with no generated timestamp.
+`--check` is read-only unless `--output` or `--markdown` is supplied explicitly. It exits `0` when no suggestion meets the threshold and exits `3` when at least one suggestion blocks. The default threshold is `warning`; `error` blocks only errors, `warning` blocks errors and unacknowledged warning suggestions, and `advisory` blocks every suggestion including acknowledged advisory items.
+
+Suggestions include schema version, config path, mode, summary counts, affected source/output metadata when DevImg can prove it, `affected_path`, severity, rationale, structured `suggested_config` data, commands, and `next_command`. The output is deterministic and diffable, with no generated timestamp. When warnings are intentional, prefer narrow `[[warnings.acknowledge]]` entries with a reviewed reason; otherwise change source assets or config and regenerate.
 
 ## Framework Diagnostics
 
@@ -387,7 +393,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.2.1
+      - uses: cleissonom/devimg/action@v0.2.2
         with:
           mode: check
           export-output: lib/devimg.generated.ts
@@ -435,8 +441,8 @@ cargo install devimg
 Create a version tag that matches the workspace version and push it after publishing crates:
 
 ```bash
-git tag v0.2.1
-git push origin v0.2.1
+git tag v0.2.2
+git push origin v0.2.2
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

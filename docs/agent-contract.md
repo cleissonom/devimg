@@ -46,11 +46,15 @@ Generate deterministic suggestion files when an agent needs structured follow-up
 
 ```bash
 devimg suggest --metadata-only
+devimg suggest --metadata-only --check
+devimg suggest --metadata-only --check --fail-on-severity warning
 devimg suggest --metadata-only --output devimg-suggestions.json
 devimg suggest --metadata-only --markdown devimg-suggestions.md
 ```
 
-`devimg suggest --metadata-only` writes `devimg-suggestions.json` under the configured project root by default, supports `--config <path>`, and refuses to replace existing JSON or Markdown output unless `--force` is passed. The command is local-only and does not call OpenAI, Anthropic, or any external provider.
+`devimg suggest --metadata-only` writes `devimg-suggestions.json` under the configured project root by default, supports `--config <path>`, and refuses to replace existing JSON or Markdown output unless `--force` is passed. `--check` is read-only unless explicit output paths are supplied; it exits `0` when no suggestion meets the threshold and `3` when suggestions block. The command is local-only and does not call OpenAI, Anthropic, or any external provider.
+
+Suggestion items include severity, rationale, `affected_path`, `commands`, and `next_command` so agents can report concrete follow-up steps without inventing provider-backed fixes.
 
 Run this loop when image sources, config, generated variants, manifests, reports, or helper files may change:
 

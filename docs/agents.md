@@ -72,14 +72,19 @@ Use `devimg suggest --metadata-only` when an agent needs diffable JSON suggestio
 
 ```bash
 devimg suggest --metadata-only
+devimg suggest --metadata-only --check
+devimg suggest --metadata-only --check --fail-on-severity warning
 devimg suggest --metadata-only --output devimg-suggestions.json
 devimg suggest --metadata-only --markdown devimg-suggestions.md
+devimg suggest --metadata-only --check --output /tmp/devimg-suggestions.json --markdown /tmp/devimg-suggestions.md
 devimg suggest --metadata-only --output devimg-suggestions.json --markdown devimg-suggestions.md --force
 ```
 
 The command writes `devimg-suggestions.json` under the configured project root by default. It supports `--config <path>`, refuses to overwrite existing JSON or Markdown output unless `--force` is passed, and does not rewrite `devimg.toml`.
 
-Suggestions include severity, affected source/output metadata when DevImg can prove it, diagnostic rationale, structured `suggested_config` data, and next commands. Treat suggestions as review inputs for explicit source or config changes, not as permission to hand-edit generated variants, manifests, reports, helper exports, or review artifacts.
+`--check` is read-only unless `--output` or `--markdown` is supplied explicitly. It exits `0` when no suggestion meets the threshold and `3` when a suggestion blocks. The default threshold is `warning`; use `error` to block only errors and `advisory` to block every suggestion.
+
+Suggestions include severity, affected source/output metadata when DevImg can prove it, `affected_path`, diagnostic rationale, structured `suggested_config` data, commands, and `next_command`. Treat suggestions as review inputs for explicit source or config changes, not as permission to hand-edit generated variants, manifests, reports, helper exports, or review artifacts.
 
 `suggest --metadata-only` is local-only. It does not call OpenAI, Anthropic, or any external provider, and it must not print or persist `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
 
