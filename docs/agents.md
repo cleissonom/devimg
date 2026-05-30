@@ -4,7 +4,7 @@ Run `devimg agent task` before changing source images, `devimg.toml`, generated 
 
 The full agent contract lives in `docs/agent-contract.md`. Use it as the file ownership and safety policy when a project has DevImg-managed assets.
 
-Roadmap planning for future AI-assisted features lives in `docs/roadmap-v0.2-ai.md`. `devimg agent task` is local-only task context; later provider-backed features remain future work. AI agents should rely on deterministic DevImg commands and treat any generated prose as reviewable suggestions, not source-of-truth pipeline behavior.
+Roadmap planning for AI-assisted features lives in `docs/roadmap-v0.2-ai.md`. `devimg agent task` is local-only task context, while provider-backed review, alt-text, and draft commands are explicit opt-in workflows. AI agents should rely on deterministic DevImg commands by default and treat any generated prose as reviewable suggestions, not source-of-truth pipeline behavior.
 
 Recommended loop:
 
@@ -118,7 +118,7 @@ AI commands may read ignored `.env` files for `OPENAI_API_KEY`, but deterministi
 Use `devimg alt` only for reviewable draft alt text. Metadata-only is the default and writes placeholder records without API keys, provider calls, or image uploads. Real alt-text generation is OpenAI-only and requires explicit `--include-images`.
 
 ```bash
-devimg alt --ai-provider openai --model "$DEVIMG_OPENAI_TEST_MODEL" --dry-run --output /tmp/devimg-alt.json
+devimg alt --output /tmp/devimg-alt.json
 devimg alt --ai-provider openai --model "$DEVIMG_OPENAI_TEST_MODEL" --include-images --output /tmp/devimg-alt.json --markdown /tmp/devimg-alt.md
 ```
 

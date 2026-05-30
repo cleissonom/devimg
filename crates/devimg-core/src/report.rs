@@ -257,7 +257,7 @@ pub fn render_doctor_report(report: &DoctorReport) -> String {
 fn push_suggestion_commands(out: &mut String, heading: &str, config_path: &str) {
     out.push_str(&format!("\n{heading}\n\n"));
     out.push_str(&format!(
-        "- Review suggestions: `{}`\n",
+        "- Write suggestions: `{}`\n",
         suggest_command(config_path)
     ));
     out.push_str(&format!(
@@ -268,7 +268,7 @@ fn push_suggestion_commands(out: &mut String, heading: &str, config_path: &str) 
 
 fn suggest_command(config_path: &str) -> String {
     format!(
-        "devimg suggest --metadata-only --config {}",
+        "devimg suggest --metadata-only --config {} --output devimg-suggestions.json --markdown devimg-suggestions.md",
         shell_arg(config_path)
     )
 }

@@ -56,7 +56,7 @@ devimg suggest --metadata-only --markdown devimg-suggestions.md
 
 Suggestion items include severity, rationale, `affected_path`, `commands`, and `next_command` so agents can report concrete follow-up steps without inventing provider-backed fixes.
 
-Preview provider consent before any future provider-backed workflow:
+Preview provider consent before any provider-backed workflow:
 
 ```bash
 devimg ai consent --ai-provider openai --model openai-dry-run-model --dry-run

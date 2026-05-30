@@ -349,9 +349,6 @@ Use `alt` for reviewable draft alt text from the configured manifest. Metadata-o
 
 ```bash
 devimg alt \
-  --ai-provider openai \
-  --model "$DEVIMG_OPENAI_TEST_MODEL" \
-  --dry-run \
   --output /tmp/devimg-alt.json \
   --markdown /tmp/devimg-alt.md \
   --force
@@ -431,10 +428,10 @@ fit = "contain"
 - `optimize --dry-run` plans work without writing files.
 - Existing unmanaged outputs are not overwritten unless config `overwrite = true` or CLI `--allow-overwrite` is used.
 - `suggest --metadata-only` writes reviewable suggestion files only; it does not call providers or edit config, sources, generated variants, manifests, reports, or helper files.
-- `ai consent --dry-run` validates provider consent previews without API keys. Non-dry-run consent preview validates the provider key exists but still performs no provider call.
-- `review --ai --dry-run` writes an AI review preview without API keys or provider calls. Real `review --ai` calls are OpenAI-only, require `OPENAI_API_KEY`, and send image bytes only with `--include-images`.
-- `alt --dry-run` writes alt-text placeholder artifacts without API keys or provider calls. Real `alt --include-images` calls are OpenAI-only, require `OPENAI_API_KEY`, and generate draft text only for human review.
-- `draft --dry-run` writes Markdown draft artifacts without API keys or provider calls. Real `draft --ai-provider openai` calls are text-only, require `OPENAI_API_KEY`, and generate advisory prose only for human review.
+- Fully flagged AI consent dry-run commands validate provider consent previews without API keys. Non-dry-run consent preview validates the provider key exists but still performs no provider call.
+- Fully flagged AI review dry-run commands write AI review previews without API keys or provider calls. Real `review --ai` calls are OpenAI-only, require `OPENAI_API_KEY`, and send image bytes only with `--include-images`.
+- `alt` and `alt --dry-run` write metadata-only placeholder artifacts without API keys or provider calls when no provider is selected. Real `alt --include-images --ai-provider openai --model <model>` calls require `OPENAI_API_KEY` and generate draft text only for human review.
+- `draft --draft-type <type> --dry-run` writes Markdown draft artifacts without API keys or provider calls. Real `draft --ai-provider openai --model <model>` calls are text-only, require `OPENAI_API_KEY`, and generate advisory prose only for human review.
 - Re-encoding strips metadata by default. `strip_metadata = false` is parsed, but the current encoders do not preserve source metadata.
 - `check` fails on missing outputs, stale manifests, modified outputs, outdated config hashes, and byte budget violations. Add `--fail-on-warning` when advisory warnings should fail CI, or `--no-report` when a wrapper needs read-only validation without rewriting the Markdown report.
 
@@ -498,7 +495,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.2.6
+      - uses: cleissonom/devimg/action@v0.2.7
         with:
           mode: check
           export-output: lib/devimg.generated.ts
@@ -513,7 +510,7 @@ jobs:
           if-no-files-found: error
 ```
 
-This repository's CI smoke test builds the CLI, runs the local composite Action with `uses: ./action`, and passes `binary-path: target/debug/devimg`. Public repositories can pin the release tag shown above; the Action downloads the matching GitHub Release archive and verifies its SHA-256 checksum before running. The Action exposes `binary-path` as an output so downstream workflow steps can call the resolved CLI directly, for example to run `devimg ai consent --dry-run`, `devimg review --ai --dry-run`, `devimg alt --dry-run`, or `devimg draft --dry-run` without API keys.
+This repository's CI smoke test builds the CLI, runs the local composite Action with `uses: ./action`, and passes `binary-path: target/debug/devimg`. Public repositories can pin the release tag shown above; the Action downloads the matching GitHub Release archive and verifies its SHA-256 checksum before running. The Action exposes `binary-path` as an output so downstream workflow steps can call the resolved CLI directly, for example to run fully flagged `ai consent`, `review --ai`, `alt`, or `draft` dry-runs without API keys.
 
 When `export-output` is set, the Action runs `devimg manifest export --check` after `devimg check --no-report` and fails if the checked-in helper file is missing or stale. It does not rewrite the helper. Set `export-typescript-helpers: "true"` when the checked-in TypeScript file was generated with `--typescript-helpers`.
 
@@ -546,8 +543,8 @@ cargo install devimg
 Create a version tag that matches the workspace version and push it after publishing crates:
 
 ```bash
-git tag v0.2.6
-git push origin v0.2.6
+git tag v0.2.7
+git push origin v0.2.7
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

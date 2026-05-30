@@ -192,19 +192,38 @@ fn add_dependency(
 }
 
 fn detect_manifest_helpers(config: &Config) -> Vec<String> {
-    let mut helpers = Vec::new();
+    let mut helpers = BTreeSet::new();
     for candidate in [
         "lib/devimg.generated.ts",
         "lib/devimg.ts",
         "src/lib/devimg.generated.ts",
         "src/lib/devimg.ts",
     ] {
-        let path = config.project.root.join(candidate);
-        if path.is_file() {
-            helpers.push(path_to_string(&project_relative(config, &path)));
+        add_manifest_helper_if_file(config, &mut helpers, config.project.root.join(candidate));
+    }
+    for directory in ["lib", "src/lib"] {
+        let path = config.project.root.join(directory);
+        let Ok(entries) = fs::read_dir(path) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let helper_path = entry.path();
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            if helper_path.is_file()
+                && file_name.starts_with("devimg-")
+                && file_name.ends_with(".generated.ts")
+            {
+                add_manifest_helper_if_file(config, &mut helpers, helper_path);
+            }
         }
     }
-    helpers
+    helpers.into_iter().collect()
+}
+
+fn add_manifest_helper_if_file(config: &Config, helpers: &mut BTreeSet<String>, path: PathBuf) {
+    if path.is_file() {
+        helpers.insert(path_to_string(&project_relative(config, &path)));
+    }
 }
 
 fn matching_helper<'a>(
@@ -303,7 +322,14 @@ mod tests {
         fs::write(root.join("vite.config.ts"), "export default {}\n").expect("vite config writes");
         fs::write(root.join("lib/devimg.generated.ts"), "generated\n")
             .expect("generated helper writes");
+        fs::write(root.join("lib/devimg-seo.generated.ts"), "seo generated\n")
+            .expect("seo generated helper writes");
         fs::write(root.join("lib/devimg.ts"), "runtime\n").expect("runtime helper writes");
+        fs::write(
+            root.join("src/lib/devimg-gallery.generated.ts"),
+            "gallery generated\n",
+        )
+        .expect("gallery generated helper writes");
         fs::write(root.join("src/lib/devimg.ts"), "src runtime\n").expect("src helper writes");
         let config = config(&root, "content_hash_filenames = true");
 
@@ -312,8 +338,10 @@ mod tests {
         assert_eq!(
             report.manifest_helpers,
             vec![
+                "lib/devimg-seo.generated.ts",
                 "lib/devimg.generated.ts",
                 "lib/devimg.ts",
+                "src/lib/devimg-gallery.generated.ts",
                 "src/lib/devimg.ts"
             ]
         );
@@ -341,6 +369,36 @@ mod tests {
         let report = inspect_frameworks(&config, Some(&export_output));
 
         assert_eq!(report.manifest_helpers, vec!["lib/devimg.generated.ts"]);
+        assert!(!report.warnings.iter().any(|warning| {
+            warning.code == "framework_manifest_helper_unchecked"
+                || warning.code == "framework_manifest_export_missing"
+        }));
+        cleanup(&root);
+    }
+
+    #[test]
+    fn named_export_output_matches_discovered_generated_helper() {
+        let root = temp_project("framework_named_helper_match");
+        fs::create_dir_all(root.join("lib")).expect("lib creates");
+        fs::write(root.join("vite.config.ts"), "export default {}\n").expect("vite config writes");
+        fs::write(root.join("lib/devimg.generated.ts"), "generated\n")
+            .expect("generated helper writes");
+        fs::write(root.join("lib/devimg-seo.generated.ts"), "seo generated\n")
+            .expect("seo generated helper writes");
+        fs::write(root.join("lib/devimg.ts"), "runtime\n").expect("runtime helper writes");
+        let config = config(&root, "content_hash_filenames = true");
+        let export_output = PathBuf::from("lib/devimg-seo.generated.ts");
+
+        let report = inspect_frameworks(&config, Some(&export_output));
+
+        assert_eq!(
+            report.manifest_helpers,
+            vec![
+                "lib/devimg-seo.generated.ts",
+                "lib/devimg.generated.ts",
+                "lib/devimg.ts"
+            ]
+        );
         assert!(!report.warnings.iter().any(|warning| {
             warning.code == "framework_manifest_helper_unchecked"
                 || warning.code == "framework_manifest_export_missing"

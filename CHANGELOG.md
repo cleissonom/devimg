@@ -4,6 +4,16 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 ## Unreleased
 
+## 0.2.7
+
+- Polished CLI help text with command and flag descriptions across the DevImg command surface.
+- Made `devimg alt` metadata-only mode runnable without `--ai-provider` or `--model`, while preserving explicit provider/model validation for real OpenAI image-backed generation.
+- Added an exact `dry_run_command` field to AI consent previews.
+- Cleaned up duplicated generated agent-task regeneration guidance and consolidated OpenAI Responses API request handling.
+- Made report suggestion commands explicit about writing JSON/Markdown files instead of implying a read-only review command.
+- Taught framework doctor checks to recognize named generated helpers such as `lib/devimg-seo.generated.ts`.
+- Updated docs, Action defaults, release references, and dogfood guidance for `v0.2.7`.
+
 ## 0.2.6
 
 - Added `devimg draft` for reviewable Markdown draft artifacts from manifest metadata, DevImg reports, changelog excerpts, and optional compare/review artifacts.

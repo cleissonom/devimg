@@ -115,30 +115,48 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Create a starter devimg.toml.
     Init(InitArgs),
+    /// Generate configured image variants, manifest, and report.
     Optimize(OptimizeArgs),
+    /// Verify generated outputs, manifest, report, and budgets.
     Check(CheckArgs),
+    /// Diagnose project state and optional manifest export drift.
     Doctor(DoctorArgs),
+    /// Render a Markdown report from an existing manifest.
     Report(ReportArgs),
+    /// Render static HTML review or opt-in AI review artifacts.
     Review(ReviewArgs),
+    /// Compare two DevImg manifest files.
     Compare(CompareArgs),
+    /// Inspect image metadata and hash values.
     Inspect(InspectArgs),
+    /// Generate deterministic local suggestions from diagnostics.
     Suggest(SuggestArgs),
+    /// Generate reviewable draft alt-text artifacts.
     Alt(AltArgs),
+    /// Generate reviewable Markdown prose drafts.
     Draft(DraftArgs),
+    /// Export manifest data for application consumption.
     Manifest(ManifestArgs),
+    /// Generate local task context or agent instructions.
     Agent(AgentArgs),
+    /// Preview explicit provider consent for AI-capable commands.
     Ai(AiArgs),
 }
 
 #[derive(Debug, Args)]
 struct InitArgs {
+    /// Config file to create.
     #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
+    /// Starter profile with framework-friendly paths.
     #[arg(long, value_enum)]
     profile: Option<InitProfile>,
+    /// Print the starter config instead of writing a file.
     #[arg(long)]
     stdout: bool,
+    /// Replace an existing config file.
     #[arg(long)]
     force: bool,
 }
@@ -152,166 +170,229 @@ enum InitProfile {
 
 #[derive(Debug, Args)]
 struct OptimizeArgs {
+    /// Config file to read.
     #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
+    /// Plan work without writing generated files.
     #[arg(long)]
     dry_run: bool,
+    /// Replace managed output files when regeneration is needed.
     #[arg(long)]
     allow_overwrite: bool,
 }
 
 #[derive(Debug, Args)]
 struct CheckArgs {
+    /// Config file to read.
     #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
+    /// Fail on unacknowledged warnings in addition to errors.
     #[arg(long)]
     fail_on_warning: bool,
+    /// Validate without rewriting the configured Markdown report.
     #[arg(long)]
     no_report: bool,
 }
 
 #[derive(Debug, Args)]
 struct DoctorArgs {
+    /// Config file to read.
     #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
+    /// Emit machine-readable JSON.
     #[arg(long)]
     json: bool,
+    /// Verify a checked-in manifest export/helper against current manifest data.
     #[arg(long)]
     export_output: Option<PathBuf>,
+    /// Export format used by --export-output.
     #[arg(long, value_enum, default_value = "json")]
     export_format: ManifestExportFormat,
+    /// Project path prefix stripped from exported image URLs.
     #[arg(long)]
     strip_prefix: Option<String>,
+    /// URL prefix added to exported image URLs.
     #[arg(long, default_value = "")]
     url_prefix: String,
+    /// Include TypeScript lookup helpers in export drift verification.
     #[arg(long)]
     typescript_helpers: bool,
 }
 
 #[derive(Debug, Args)]
 struct ReportArgs {
+    /// Manifest JSON file to render.
     #[arg(long)]
     manifest: PathBuf,
 }
 
 #[derive(Debug, Args)]
 struct ReviewArgs {
+    /// Manifest JSON file to review.
     #[arg(long)]
     manifest: PathBuf,
+    /// HTML review artifact path for non-AI review.
     #[arg(long)]
     output: Option<PathBuf>,
+    /// Print non-AI review HTML to stdout.
     #[arg(long)]
     stdout: bool,
+    /// Replace existing review output artifacts.
     #[arg(long)]
     force: bool,
+    /// Run opt-in AI review instead of static HTML-only review.
     #[arg(long)]
     ai: bool,
+    /// AI provider for --ai review; real review is OpenAI-only.
     #[arg(long = "ai-provider", value_enum)]
     ai_provider: Option<AiProviderArg>,
+    /// Provider model name. Required for --ai review.
     #[arg(long)]
     model: Option<String>,
+    /// Review metadata only; this is the default AI mode.
     #[arg(long)]
     metadata_only: bool,
+    /// Include selected image bytes in an OpenAI AI review request.
     #[arg(long)]
     include_images: bool,
+    /// Write a dry-run AI review preview without provider calls or keys.
     #[arg(long)]
     dry_run: bool,
+    /// AI review JSON output path.
     #[arg(long = "ai-output")]
     ai_output: Option<PathBuf>,
+    /// Optional AI review Markdown output path.
     #[arg(long)]
     markdown: Option<PathBuf>,
+    /// Maximum selected images for image-backed AI review.
     #[arg(long, default_value_t = DEFAULT_AI_REVIEW_MAX_IMAGES)]
     max_images: usize,
+    /// OpenAI image detail level for image-backed AI review.
     #[arg(long, value_enum, default_value = "low")]
     image_detail: AiImageDetailArg,
 }
 
 #[derive(Debug, Args)]
 struct CompareArgs {
+    /// Base manifest JSON file.
     #[arg(long)]
     base: PathBuf,
+    /// Head manifest JSON file.
     #[arg(long)]
     head: PathBuf,
+    /// Emit machine-readable JSON.
     #[arg(long)]
     json: bool,
+    /// Number of largest byte deltas to show in text output.
     #[arg(long, default_value_t = 5)]
     top: usize,
 }
 
 #[derive(Debug, Args)]
 struct InspectArgs {
+    /// Image files to inspect.
     #[arg(required = true, allow_hyphen_values = true)]
     files: Vec<PathBuf>,
 }
 
 #[derive(Debug, Args)]
 struct SuggestArgs {
+    /// Config file to read.
     #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
+    /// Required local-only suggestion mode.
     #[arg(long)]
     metadata_only: bool,
+    /// Run as a suggestion gate.
     #[arg(long)]
     check: bool,
+    /// Minimum severity that fails --check.
     #[arg(long, value_enum)]
     fail_on_severity: Option<SuggestFailSeverity>,
+    /// Suggestion JSON output path.
     #[arg(long)]
     output: Option<PathBuf>,
+    /// Optional Markdown summary output path.
     #[arg(long)]
     markdown: Option<PathBuf>,
+    /// Replace existing suggestion artifacts.
     #[arg(long)]
     force: bool,
 }
 
 #[derive(Debug, Args)]
 struct AltArgs {
+    /// Config file to read.
     #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
+    /// AI provider. OpenAI is required for real image-backed generation.
     #[arg(long = "ai-provider", value_enum)]
-    ai_provider: AiProviderArg,
+    ai_provider: Option<AiProviderArg>,
+    /// Provider model name.
     #[arg(long)]
-    model: String,
+    model: Option<String>,
+    /// Write placeholder records without provider calls; this is the default mode.
     #[arg(long)]
     metadata_only: bool,
+    /// Include selected image bytes in an OpenAI alt-text request.
     #[arg(long)]
     include_images: bool,
+    /// Write placeholder/dry-run artifacts without provider calls or keys.
     #[arg(long)]
     dry_run: bool,
+    /// Alt-text JSON output path.
     #[arg(long)]
     output: Option<PathBuf>,
+    /// Optional Markdown summary output path.
     #[arg(long)]
     markdown: Option<PathBuf>,
+    /// Replace existing alt-text artifacts.
     #[arg(long)]
     force: bool,
+    /// Maximum selected images for image-backed generation.
     #[arg(long, default_value_t = DEFAULT_AI_REVIEW_MAX_IMAGES)]
     max_images: usize,
+    /// OpenAI image detail level for image-backed generation.
     #[arg(long, value_enum, default_value = "low")]
     image_detail: AiImageDetailArg,
 }
 
 #[derive(Debug, Args)]
 struct DraftArgs {
+    /// Config file to read.
     #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
+    /// Markdown draft artifact type to create.
     #[arg(long = "draft-type", value_enum)]
     draft_type: DraftTypeArg,
+    /// Force deterministic metadata-only drafting; incompatible with --ai-provider.
     #[arg(long)]
     metadata_only: bool,
+    /// AI provider for provider-backed drafting. Real calls are OpenAI-only.
     #[arg(long = "ai-provider", value_enum)]
     ai_provider: Option<AiProviderArg>,
+    /// Provider model name. Required with --ai-provider.
     #[arg(long)]
     model: Option<String>,
+    /// Write a provider-shaped draft preview without provider calls or keys.
     #[arg(long)]
     dry_run: bool,
+    /// Markdown draft output path.
     #[arg(long)]
     output: Option<PathBuf>,
+    /// Replace an existing draft artifact.
     #[arg(long)]
     force: bool,
+    /// Optional manifest compare JSON artifact to summarize.
     #[arg(long = "compare-json")]
     compare_json: Option<PathBuf>,
+    /// Optional AI review JSON artifact to summarize.
     #[arg(long = "ai-review-json")]
     ai_review_json: Option<PathBuf>,
+    /// Optional static review HTML artifact to summarize.
     #[arg(long = "review-html")]
     review_html: Option<PathBuf>,
+    /// Optional changelog path. CHANGELOG.md is used automatically when present.
     #[arg(long)]
     changelog: Option<PathBuf>,
 }
@@ -351,34 +432,45 @@ struct AiArgs {
 
 #[derive(Debug, Subcommand)]
 enum ManifestCommand {
+    /// Export manifest data as JSON or TypeScript.
     Export(ManifestExportArgs),
 }
 
 #[derive(Debug, Subcommand)]
 enum AgentCommand {
+    /// Create reviewed Codex/Claude image-pipeline instructions.
     Init(AgentInitArgs),
+    /// Print or write a local-only Markdown task contract.
     Task(AgentTaskArgs),
 }
 
 #[derive(Debug, Subcommand)]
 enum AiCommand {
+    /// Preview provider setup and consent metadata without provider calls.
     Consent(AiConsentArgs),
 }
 
 #[derive(Debug, Args)]
 struct ManifestExportArgs {
+    /// Manifest JSON file to export.
     #[arg(long)]
     manifest: PathBuf,
+    /// Export format.
     #[arg(long, value_enum, default_value = "json")]
     format: ManifestExportFormat,
+    /// Output file. Omit to print to stdout.
     #[arg(long)]
     output: Option<PathBuf>,
+    /// Project path prefix stripped from exported image URLs.
     #[arg(long)]
     strip_prefix: Option<String>,
+    /// URL prefix added to exported image URLs.
     #[arg(long, default_value = "")]
     url_prefix: String,
+    /// Check that --output is current instead of writing it.
     #[arg(long)]
     check: bool,
+    /// Include generated TypeScript lookup helpers.
     #[arg(long)]
     typescript_helpers: bool,
 }
@@ -391,14 +483,19 @@ enum ManifestExportFormat {
 
 #[derive(Debug, Args)]
 struct AgentInitArgs {
+    /// Instruction target to generate.
     #[arg(long, value_enum)]
     target: AgentTarget,
+    /// Directory where instruction files are written.
     #[arg(long, default_value = ".")]
     output_dir: PathBuf,
+    /// Config path referenced by generated instructions.
     #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
+    /// Print generated instructions instead of writing files.
     #[arg(long)]
     stdout: bool,
+    /// Replace existing instruction files.
     #[arg(long)]
     force: bool,
 }
@@ -412,12 +509,16 @@ enum AgentTarget {
 
 #[derive(Debug, Args)]
 struct AgentTaskArgs {
+    /// Agent-specific final-response guidance.
     #[arg(long, value_enum, default_value = "generic")]
     agent: AgentTaskAgent,
+    /// Config file to read.
     #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
+    /// Markdown task output path. Omit to print to stdout.
     #[arg(long)]
     output: Option<PathBuf>,
+    /// Replace an existing task output file.
     #[arg(long)]
     force: bool,
 }
@@ -431,20 +532,28 @@ enum AgentTaskAgent {
 
 #[derive(Debug, Args)]
 struct AiConsentArgs {
+    /// Config file to read.
     #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
     config: PathBuf,
+    /// Provider to preview.
     #[arg(long = "ai-provider", value_enum)]
     ai_provider: AiProviderArg,
+    /// Provider model name to include in the preview.
     #[arg(long)]
     model: String,
+    /// Preview metadata-only mode; this is the default.
     #[arg(long)]
     metadata_only: bool,
+    /// Include image-byte consent metadata without sending bytes.
     #[arg(long)]
     include_images: bool,
+    /// Avoid requiring provider keys.
     #[arg(long)]
     dry_run: bool,
+    /// Consent JSON output path. Omit to print to stdout.
     #[arg(long)]
     output: Option<PathBuf>,
+    /// Replace an existing consent preview artifact.
     #[arg(long)]
     force: bool,
 }
@@ -887,11 +996,13 @@ fn command_suggest(args: SuggestArgs) -> Result<(), CliError> {
 }
 
 fn command_alt(args: AltArgs) -> Result<(), CliError> {
-    if args.model.trim().is_empty() {
-        return Err(CliError::Core(DevimgError::config(
-            &args.config,
-            "--model cannot be empty",
-        )));
+    if let Some(model) = &args.model {
+        if model.trim().is_empty() {
+            return Err(CliError::Core(DevimgError::config(
+                &args.config,
+                "--model cannot be empty",
+            )));
+        }
     }
     if args.metadata_only && args.include_images {
         return Err(CliError::Core(DevimgError::config(
@@ -906,12 +1017,32 @@ fn command_alt(args: AltArgs) -> Result<(), CliError> {
         )));
     }
 
-    let provider = args.ai_provider.into_core();
-    if args.include_images && provider != AiProvider::Openai {
+    let provider = args.ai_provider.map(AiProviderArg::into_core);
+    if args.model.is_some() && provider.is_none() {
         return Err(CliError::Core(DevimgError::config(
             &args.config,
-            "devimg alt supports OpenAI image-backed alt-text generation only in this release; Anthropic alt text is deferred",
+            "--model requires --ai-provider",
         )));
+    }
+    if provider.is_some() && args.model.is_none() {
+        return Err(CliError::Core(DevimgError::config(
+            &args.config,
+            "devimg alt with --ai-provider requires --model",
+        )));
+    }
+    if args.include_images {
+        if provider != Some(AiProvider::Openai) {
+            return Err(CliError::Core(DevimgError::config(
+                &args.config,
+                "devimg alt --include-images requires --ai-provider openai; Anthropic alt text is deferred",
+            )));
+        }
+        if args.model.is_none() {
+            return Err(CliError::Core(DevimgError::config(
+                &args.config,
+                "devimg alt --include-images requires --model",
+            )));
+        }
     }
 
     let config = load_config(&args.config)?;
@@ -961,7 +1092,7 @@ fn command_alt(args: AltArgs) -> Result<(), CliError> {
     let report = if args.include_images && !args.dry_run {
         let key = read_ai_provider_key(
             &args.config,
-            provider,
+            AiProvider::Openai,
             std::slice::from_ref(&config.project.root),
             "devimg alt",
         )?;
@@ -1342,45 +1473,12 @@ fn call_openai_review(
     api_key: &str,
 ) -> Result<AiReviewProviderPayload, CliError> {
     let body = build_openai_review_body(request, project_root)?;
-    let client = reqwest::blocking::Client::builder().build().map_err(|_| {
-        CliError::Core(DevimgError::config(
-            &request.manifest_path,
-            "failed to construct OpenAI HTTP client",
-        ))
-    })?;
-    let response = client
-        .post("https://api.openai.com/v1/responses")
-        .bearer_auth(api_key)
-        .json(&body)
-        .send()
-        .map_err(|_| {
-            CliError::Core(DevimgError::config(
-                &request.manifest_path,
-                "OpenAI Responses API request failed before a response was received",
-            ))
-        })?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(CliError::Core(DevimgError::config(
-            &request.manifest_path,
-            format!(
-                "OpenAI Responses API request failed with HTTP status {}",
-                status.as_u16()
-            ),
-        )));
-    }
-    let value: Value = response.json().map_err(|_| {
-        CliError::Core(DevimgError::config(
-            &request.manifest_path,
-            "OpenAI response was not valid JSON",
-        ))
-    })?;
-    let output_text = extract_openai_output_text(&value).ok_or_else(|| {
-        CliError::Core(DevimgError::config(
-            &request.manifest_path,
-            "OpenAI response did not include AI review JSON",
-        ))
-    })?;
+    let output_text = call_openai_responses_api(
+        Path::new(&request.manifest_path),
+        api_key,
+        body,
+        "OpenAI response did not include AI review JSON",
+    )?;
     serde_json::from_str::<AiReviewProviderPayload>(output_text.trim()).map_err(|_| {
         CliError::Core(DevimgError::config(
             &request.manifest_path,
@@ -1440,45 +1538,12 @@ fn call_openai_alt(
     api_key: &str,
 ) -> Result<AiAltProviderPayload, CliError> {
     let body = build_openai_alt_body(request, project_root)?;
-    let client = reqwest::blocking::Client::builder().build().map_err(|_| {
-        CliError::Core(DevimgError::config(
-            &request.config_path,
-            "failed to construct OpenAI HTTP client",
-        ))
-    })?;
-    let response = client
-        .post("https://api.openai.com/v1/responses")
-        .bearer_auth(api_key)
-        .json(&body)
-        .send()
-        .map_err(|_| {
-            CliError::Core(DevimgError::config(
-                &request.config_path,
-                "OpenAI Responses API request failed before a response was received",
-            ))
-        })?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(CliError::Core(DevimgError::config(
-            &request.config_path,
-            format!(
-                "OpenAI Responses API request failed with HTTP status {}",
-                status.as_u16()
-            ),
-        )));
-    }
-    let value: Value = response.json().map_err(|_| {
-        CliError::Core(DevimgError::config(
-            &request.config_path,
-            "OpenAI response was not valid JSON",
-        ))
-    })?;
-    let output_text = extract_openai_output_text(&value).ok_or_else(|| {
-        CliError::Core(DevimgError::config(
-            &request.config_path,
-            "OpenAI response did not include alt-text JSON",
-        ))
-    })?;
+    let output_text = call_openai_responses_api(
+        Path::new(&request.config_path),
+        api_key,
+        body,
+        "OpenAI response did not include alt-text JSON",
+    )?;
     serde_json::from_str::<AiAltProviderPayload>(output_text.trim()).map_err(|_| {
         CliError::Core(DevimgError::config(
             &request.config_path,
@@ -1507,7 +1572,7 @@ fn build_openai_alt_body(request: &AiAltRequest, project_root: &Path) -> Result<
     }
 
     Ok(json!({
-        "model": request.model,
+        "model": request.model.as_deref().unwrap_or(""),
         "input": [
             {
                 "role": "developer",
@@ -1534,9 +1599,29 @@ fn call_openai_draft(
     api_key: &str,
 ) -> Result<AiDraftProviderPayload, CliError> {
     let body = build_openai_draft_body(request);
-    let client = reqwest::blocking::Client::builder().build().map_err(|_| {
+    let output_text = call_openai_responses_api(
+        Path::new(&request.config_path),
+        api_key,
+        body,
+        "OpenAI response did not include draft JSON",
+    )?;
+    serde_json::from_str::<AiDraftProviderPayload>(output_text.trim()).map_err(|_| {
         CliError::Core(DevimgError::config(
             &request.config_path,
+            "OpenAI response did not match the DevImg draft schema",
+        ))
+    })
+}
+
+fn call_openai_responses_api(
+    error_path: &Path,
+    api_key: &str,
+    body: Value,
+    missing_output_message: &'static str,
+) -> Result<String, CliError> {
+    let client = reqwest::blocking::Client::builder().build().map_err(|_| {
+        CliError::Core(DevimgError::config(
+            error_path,
             "failed to construct OpenAI HTTP client",
         ))
     })?;
@@ -1547,14 +1632,14 @@ fn call_openai_draft(
         .send()
         .map_err(|_| {
             CliError::Core(DevimgError::config(
-                &request.config_path,
+                error_path,
                 "OpenAI Responses API request failed before a response was received",
             ))
         })?;
     let status = response.status();
     if !status.is_success() {
         return Err(CliError::Core(DevimgError::config(
-            &request.config_path,
+            error_path,
             format!(
                 "OpenAI Responses API request failed with HTTP status {}",
                 status.as_u16()
@@ -1563,22 +1648,12 @@ fn call_openai_draft(
     }
     let value: Value = response.json().map_err(|_| {
         CliError::Core(DevimgError::config(
-            &request.config_path,
+            error_path,
             "OpenAI response was not valid JSON",
         ))
     })?;
-    let output_text = extract_openai_output_text(&value).ok_or_else(|| {
-        CliError::Core(DevimgError::config(
-            &request.config_path,
-            "OpenAI response did not include draft JSON",
-        ))
-    })?;
-    serde_json::from_str::<AiDraftProviderPayload>(output_text.trim()).map_err(|_| {
-        CliError::Core(DevimgError::config(
-            &request.config_path,
-            "OpenAI response did not match the DevImg draft schema",
-        ))
-    })
+    extract_openai_output_text(&value)
+        .ok_or_else(|| CliError::Core(DevimgError::config(error_path, missing_output_message)))
 }
 
 fn build_openai_draft_body(request: &AiDraftRequest) -> Value {
@@ -2421,7 +2496,6 @@ fn render_agent_task(
     out.push_str(&format!("{}\n", commands.doctor));
     out.push_str(&format!("{}\n", commands.optimize));
     out.push_str(&format!("{}\n", commands.check));
-    out.push_str(&format!("{}\n", commands.doctor));
     out.push_str("```\n\n");
     out.push_str("Regenerate checked-in manifest helpers with a project-specific `devimg manifest export` command that matches the helper's original `--format`, `--strip-prefix`, `--url-prefix`, and `--typescript-helpers` options.\n\n");
     out.push_str("Regenerate a local static review artifact when visual review is needed:\n\n");
