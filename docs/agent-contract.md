@@ -42,6 +42,16 @@ devimg agent task --agent generic
 
 The generated task context includes doctor checks, issues, warnings, acknowledged warnings, detected frameworks, manifest helper paths, generated artifact paths, file ownership guidance, regeneration commands, next commands, and expected final-response guidance for the selected agent.
 
+Generate deterministic suggestion files when an agent needs structured follow-up guidance from existing diagnostics:
+
+```bash
+devimg suggest --metadata-only
+devimg suggest --metadata-only --output devimg-suggestions.json
+devimg suggest --metadata-only --markdown devimg-suggestions.md
+```
+
+`devimg suggest --metadata-only` writes `devimg-suggestions.json` under the configured project root by default, supports `--config <path>`, and refuses to replace existing JSON or Markdown output unless `--force` is passed. The command is local-only and does not call OpenAI, Anthropic, or any external provider.
+
 Run this loop when image sources, config, generated variants, manifests, reports, or helper files may change:
 
 ```bash
@@ -62,6 +72,7 @@ If a TypeScript helper file was generated with `--typescript-helpers`, use that 
 - Treat `issues` from `devimg doctor --json` as required work.
 - Treat `warnings` as review signals.
 - Treat `acknowledged_warnings` as reviewed exceptions that must remain narrow and explained in config.
+- Treat `devimg-suggestions.json` and suggestion Markdown as advisory planning output. Apply any suggested source or config changes explicitly and regenerate derived artifacts with DevImg.
 - Do not silently auto-tune `quality`, `widths`, `fit`, `crop`, `allow_upscale`, or budgets. Make explicit config changes and explain them.
 - Do not add broad `[[warnings.acknowledge]]` entries. Acknowledge only a specific source/preset or output after visual review.
 - Use `devimg check --fail-on-warning` only when the project has chosen warnings as CI blockers.
@@ -81,4 +92,5 @@ When finishing a DevImg task, report:
 - Source/config files changed.
 - Generated files refreshed.
 - Commands run and pass/fail results.
+- Suggestion files generated or reviewed.
 - Any remaining warnings, risks, or follow-up items.

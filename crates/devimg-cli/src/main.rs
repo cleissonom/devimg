@@ -9,9 +9,10 @@ use devimg_core::{
     load_config, manifest_compare_to_json, manifest_export_to_json,
     manifest_export_to_typescript_with_options, optimize, read_manifest, render_doctor_report,
     render_manifest_compare_report, render_manifest_report, render_manifest_review,
-    render_run_report, CheckOptions, DevimgError, DoctorManifestExportFormat,
-    DoctorManifestExportOptions, DoctorOptions, ManifestCompareOptions, ManifestExportOptions,
-    ManifestReviewOptions, ManifestTypescriptOptions, OptimizeOptions,
+    render_run_report, render_suggestion_markdown, suggest, suggestion_report_to_json,
+    CheckOptions, DevimgError, DoctorManifestExportFormat, DoctorManifestExportOptions,
+    DoctorOptions, ManifestCompareOptions, ManifestExportOptions, ManifestReviewOptions,
+    ManifestTypescriptOptions, OptimizeOptions, SuggestOptions,
 };
 
 const DEFAULT_CONFIG_PATH: &str = "devimg.toml";
@@ -71,6 +72,7 @@ where
         Command::Review(args) => command_review(args),
         Command::Compare(args) => command_compare(args),
         Command::Inspect(args) => command_inspect(args),
+        Command::Suggest(args) => command_suggest(args),
         Command::Manifest(args) => command_manifest(args),
         Command::Agent(args) => command_agent(args),
     }
@@ -100,6 +102,7 @@ enum Command {
     Review(ReviewArgs),
     Compare(CompareArgs),
     Inspect(InspectArgs),
+    Suggest(SuggestArgs),
     Manifest(ManifestArgs),
     Agent(AgentArgs),
 }
@@ -195,6 +198,20 @@ struct CompareArgs {
 struct InspectArgs {
     #[arg(required = true, allow_hyphen_values = true)]
     files: Vec<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct SuggestArgs {
+    #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
+    config: PathBuf,
+    #[arg(long)]
+    metadata_only: bool,
+    #[arg(long)]
+    output: Option<PathBuf>,
+    #[arg(long)]
+    markdown: Option<PathBuf>,
+    #[arg(long)]
+    force: bool,
 }
 
 #[derive(Debug, Args)]
@@ -468,6 +485,56 @@ fn command_inspect(args: InspectArgs) -> Result<(), CliError> {
     Ok(())
 }
 
+fn command_suggest(args: SuggestArgs) -> Result<(), CliError> {
+    if !args.metadata_only {
+        return Err(CliError::Core(DevimgError::config(
+            &args.config,
+            "devimg suggest currently requires --metadata-only",
+        )));
+    }
+
+    let config = load_config(&args.config)?;
+    let json_output = args
+        .output
+        .unwrap_or_else(|| config.project.root.join("devimg-suggestions.json"));
+    if let Some(markdown) = &args.markdown {
+        if comparable_output_path(markdown)? == comparable_output_path(&json_output)? {
+            return Err(CliError::Core(DevimgError::config(
+                &json_output,
+                "--output and --markdown must use different paths",
+            )));
+        }
+    }
+
+    let mut outputs = vec![json_output.clone()];
+    if let Some(markdown) = &args.markdown {
+        outputs.push(markdown.clone());
+    }
+    for output in &outputs {
+        if output.exists() && !args.force {
+            return Err(CliError::Core(DevimgError::UnsafeOverwrite {
+                path: output.clone(),
+            }));
+        }
+    }
+
+    let report = suggest(
+        &config,
+        SuggestOptions {
+            metadata_only: args.metadata_only,
+        },
+    )?;
+    write_text_file(&json_output, &suggestion_report_to_json(&report))?;
+    println!("Created {}", json_output.display());
+
+    if let Some(markdown) = args.markdown {
+        write_text_file(&markdown, &render_suggestion_markdown(&report))?;
+        println!("Created {}", markdown.display());
+    }
+
+    Ok(())
+}
+
 fn command_manifest(args: ManifestArgs) -> Result<(), CliError> {
     match args.command {
         ManifestCommand::Export(args) => command_manifest_export(args),
@@ -634,6 +701,11 @@ fn render_core_error(error: &DevimgError) -> String {
                 "\nHint: choose a task output path such as `ai_tasks/devimg-agent-task.md` instead of an agent instruction file.",
             );
         }
+        DevimgError::Config { message, .. }
+            if message == "devimg suggest currently requires --metadata-only" =>
+        {
+            out.push_str("\nHint: run `devimg suggest --metadata-only` to generate deterministic local suggestions.");
+        }
         DevimgError::Config { path, message } if message == "config file not found" => {
             out.push_str(&format!(
                 "\nHint: create a starter config with `{}` or pass the right `--config` path.",
@@ -657,6 +729,25 @@ fn render_core_error(error: &DevimgError) -> String {
         DevimgError::Io { .. } | DevimgError::CheckFailed { .. } => {}
     }
     out
+}
+
+fn write_text_file(path: &Path, contents: &str) -> Result<(), CliError> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|source| DevimgError::io(parent, source))?;
+        }
+    }
+    fs::write(path, contents).map_err(|source| DevimgError::io(path, source))?;
+    Ok(())
+}
+
+fn comparable_output_path(path: &Path) -> Result<PathBuf, CliError> {
+    let current_dir = std::env::current_dir().map_err(|source| DevimgError::io(".", source))?;
+    Ok(normalize_lexical(&if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        current_dir.join(path)
+    }))
 }
 
 fn manifest_export_write_command(args: &ManifestExportArgs, output: &Path) -> String {

@@ -10,11 +10,12 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["doctor", "--help"]), 0);
     assert_code(run(["agent", "--help"]), 0);
     assert_code(run(["agent", "task", "--help"]), 0);
+    assert_code(run(["suggest", "--help"]), 0);
     assert_code(run(["compare", "--help"]), 0);
     assert_code(run(["review", "--help"]), 0);
     let version = run(["--version"]);
     assert_status(&version, 0);
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.0"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.1"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -1764,6 +1765,265 @@ max_total_bytes = "5mb"
     assert!(stdout.contains("Tune preset quality"));
     assert!(stdout.contains("public/images/generated/hero-screenshot.hero.64.webp"));
     assert!(stdout.contains("## Generated Artifacts"));
+    cleanup(&project);
+}
+
+#[test]
+fn suggest_requires_metadata_only_and_writes_nothing_without_it() {
+    let project = fixture_project("suggest_requires_metadata_only", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    let output = run(["suggest", "--config", config.as_str()]);
+
+    assert_status(&output, 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("requires --metadata-only"));
+    assert!(stderr.contains("devimg suggest --metadata-only"));
+    assert!(!project.join("devimg-suggestions.json").exists());
+    cleanup(&project);
+}
+
+#[test]
+fn suggest_default_output_is_valid_empty_json_and_deterministic() {
+    let project = fixture_project("suggest_default_output", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    let first = run(["suggest", "--metadata-only", "--config", config.as_str()]);
+    assert_status(&first, 0);
+    let suggestions = project.join("devimg-suggestions.json");
+    assert!(String::from_utf8_lossy(&first.stdout).contains("Created"));
+    assert!(suggestions.exists());
+    let first_json = fs::read_to_string(&suggestions).expect("suggestions read");
+    let document: serde_json::Value =
+        serde_json::from_str(&first_json).expect("suggestions JSON parses");
+    assert_eq!(document["version"], 1);
+    assert_eq!(document["mode"], "metadata-only");
+    assert_eq!(document["summary"]["suggestion_count"], 0);
+    assert_eq!(document["items"].as_array().expect("items array").len(), 0);
+
+    let refused = run(["suggest", "--metadata-only", "--config", config.as_str()]);
+    assert_status(&refused, 4);
+    assert_eq!(
+        fs::read_to_string(&suggestions).expect("suggestions read"),
+        first_json
+    );
+
+    assert_code(
+        run([
+            "suggest",
+            "--metadata-only",
+            "--config",
+            config.as_str(),
+            "--force",
+        ]),
+        0,
+    );
+    assert_eq!(
+        fs::read_to_string(&suggestions).expect("forced suggestions read"),
+        first_json
+    );
+    cleanup(&project);
+}
+
+#[test]
+fn suggest_custom_output_markdown_force_and_preflight_are_safe() {
+    let project = fixture_project("suggest_custom_output", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    let json = project.join("out/devimg-suggestions.json");
+    let markdown = project.join("out/devimg-suggestions.md");
+    let json_arg = path_arg(json.clone());
+    let markdown_arg = path_arg(markdown.clone());
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    assert_code(
+        run([
+            "suggest",
+            "--metadata-only",
+            "--config",
+            config.as_str(),
+            "--output",
+            json_arg.as_str(),
+            "--markdown",
+            markdown_arg.as_str(),
+        ]),
+        0,
+    );
+    assert!(fs::read_to_string(&json)
+        .expect("suggestions read")
+        .contains("\"mode\": \"metadata-only\""));
+    assert!(fs::read_to_string(&markdown)
+        .expect("markdown reads")
+        .contains("# DevImg Suggestions"));
+
+    let same_path = project.join("out/same-path");
+    let same_path_arg = path_arg(same_path);
+    let same_path_output = run([
+        "suggest",
+        "--metadata-only",
+        "--config",
+        config.as_str(),
+        "--output",
+        same_path_arg.as_str(),
+        "--markdown",
+        same_path_arg.as_str(),
+    ]);
+    assert_status(&same_path_output, 2);
+    assert!(String::from_utf8_lossy(&same_path_output.stderr)
+        .contains("--output and --markdown must use different paths"));
+
+    fs::write(&json, "existing json\n").expect("write existing json");
+    fs::write(&markdown, "existing markdown\n").expect("write existing markdown");
+    let refused_json = run([
+        "suggest",
+        "--metadata-only",
+        "--config",
+        config.as_str(),
+        "--output",
+        json_arg.as_str(),
+        "--markdown",
+        markdown_arg.as_str(),
+    ]);
+    assert_status(&refused_json, 4);
+    assert_eq!(
+        fs::read_to_string(&json).expect("json reads"),
+        "existing json\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&markdown).expect("markdown reads"),
+        "existing markdown\n"
+    );
+
+    let json_preflight = project.join("out/preflight.json");
+    let json_preflight_arg = path_arg(json_preflight.clone());
+    let refused_markdown = run([
+        "suggest",
+        "--metadata-only",
+        "--config",
+        config.as_str(),
+        "--output",
+        json_preflight_arg.as_str(),
+        "--markdown",
+        markdown_arg.as_str(),
+    ]);
+    assert_status(&refused_markdown, 4);
+    assert!(!json_preflight.exists());
+
+    assert_code(
+        run([
+            "suggest",
+            "--metadata-only",
+            "--config",
+            config.as_str(),
+            "--output",
+            json_arg.as_str(),
+            "--markdown",
+            markdown_arg.as_str(),
+            "--force",
+        ]),
+        0,
+    );
+    assert!(fs::read_to_string(&json)
+        .expect("forced json reads")
+        .contains("\"items\": []"));
+    assert!(fs::read_to_string(&markdown)
+        .expect("forced markdown reads")
+        .contains("No suggestions."));
+    cleanup(&project);
+}
+
+#[test]
+fn suggest_custom_config_warning_context_and_secrets_are_stable() {
+    let project = temp_project("suggest_warning_context");
+    let source = project.join("assets/images/hero-screenshot.png");
+    fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+    fs::copy(fixture_image(), &source).expect("copy fixture image");
+    fs::create_dir_all(project.join("config")).expect("create config dir");
+    let nested_config = r#"[project]
+root = ".."
+manifest = "public/images/devimg-manifest.json"
+report = "devimg-report.md"
+
+[[sources]]
+name = "portfolio"
+input = "assets/images"
+output = "public/images/generated"
+include = ["**/*.png"]
+
+[[preset]]
+name = "hero"
+widths = [64]
+formats = ["webp"]
+quality = 74
+fit = "cover"
+aspect_ratio = "16:9"
+
+[budgets]
+max_total_bytes = "5mb"
+"#;
+    fs::write(project.join("config/devimg.toml"), nested_config).expect("write nested config");
+    let output_path = project.join("suggestions.json");
+    let output_arg = path_arg(output_path.clone());
+
+    assert_code(
+        run_in_dir(&project, ["optimize", "--config", "config/devimg.toml"]),
+        0,
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .current_dir(&project)
+        .args([
+            "suggest",
+            "--metadata-only",
+            "--config",
+            "config/devimg.toml",
+            "--output",
+            output_arg.as_str(),
+        ])
+        .env("OPENAI_API_KEY", "test-openai-secret")
+        .env("ANTHROPIC_API_KEY", "test-anthropic-secret")
+        .output()
+        .expect("devimg runs");
+
+    assert_status(&output, 0);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stdout.contains("test-openai-secret"));
+    assert!(!stderr.contains("test-anthropic-secret"));
+    let json = fs::read_to_string(&output_path).expect("suggestions read");
+    assert!(!json.contains("test-openai-secret"));
+    assert!(!json.contains("test-anthropic-secret"));
+    let document: serde_json::Value = serde_json::from_str(&json).expect("suggestions JSON parses");
+    assert_eq!(document["config_path"], "config/devimg.toml");
+    let items = document["items"].as_array().expect("items array");
+    let quality = items
+        .iter()
+        .find(|item| item["warning_code"] == "quality:low-lossy-quality")
+        .expect("quality suggestion exists");
+    assert_eq!(quality["severity"], "advisory");
+    assert_eq!(quality["source_path"], "assets/images/hero-screenshot.png");
+    assert_eq!(quality["preset"], "hero");
+    assert_eq!(quality["format"], "webp");
+    assert_eq!(quality["suggested_config"]["target"], "preset");
+    assert_eq!(quality["suggested_config"]["changes"]["quality"], 82);
+    cleanup(&project);
+}
+
+#[test]
+fn suggest_missing_config_keeps_existing_hint() {
+    let project = temp_project("suggest_missing_config");
+    let missing_config = path_arg(project.join("missing.toml"));
+
+    let output = run([
+        "suggest",
+        "--metadata-only",
+        "--config",
+        missing_config.as_str(),
+    ]);
+
+    assert_status(&output, 2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("missing.toml"));
+    assert!(stderr.contains("devimg init"));
     cleanup(&project);
 }
 
