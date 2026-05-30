@@ -165,11 +165,14 @@ Done criteria:
 
 Goal: add OpenAI and Anthropic provider support behind explicit consent without changing deterministic pipeline behavior.
 
+Status: implemented for the `0.2.3` release as provider setup and consent previews only. Real OpenAI/Anthropic HTTP calls remain deferred to later opt-in AI commands.
+
 Scope:
 
 - Add provider identifiers: `openai` and `anthropic`.
 - Read OpenAI credentials from `OPENAI_API_KEY`.
 - Read Anthropic credentials from `ANTHROPIC_API_KEY`.
+- Add `devimg ai consent`.
 - Add common AI flags used by AI-capable commands:
   - `--ai-provider openai|anthropic`;
   - `--model <model>`;
@@ -183,7 +186,11 @@ Scope:
   - provider;
   - model;
   - command;
+  - config path;
+  - project root;
   - files selected;
+  - manifest/report paths;
+  - generated outputs when the manifest is readable;
   - whether paths are included;
   - whether image bytes are included;
   - output path.
@@ -192,6 +199,7 @@ Scope:
 - Add mocked provider clients for tests.
 - Keep provider code isolated from transform, manifest, budget, and check logic.
 - Document key setup without printing real keys.
+- Do not add provider SDKs, HTTP clients, or model defaults in this release.
 
 Tests:
 

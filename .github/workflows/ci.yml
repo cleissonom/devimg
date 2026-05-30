@@ -118,6 +118,7 @@ jobs:
         run: cargo +stable build -p devimg
 
       - name: Smoke local action optimize
+        id: devimg-optimize
         uses: ./action
         with:
           config: examples/portfolio/devimg.toml
@@ -151,6 +152,18 @@ jobs:
           url-prefix: /
           review-output: examples/portfolio/.devimg/review.html
 
+      - name: Smoke action binary path output
+        env:
+          DEVIMG_BIN: ${{ steps.devimg-optimize.outputs.binary-path }}
+        run: |
+          "$DEVIMG_BIN" ai consent \
+            --config examples/portfolio/devimg.toml \
+            --ai-provider openai \
+            --model openai-dry-run-model \
+            --dry-run \
+            --output "${RUNNER_TEMP}/portfolio-openai-consent.json"
+          test -s "${RUNNER_TEMP}/portfolio-openai-consent.json"
+
       - name: Verify action smoke artifacts
         run: |
           test -s examples/portfolio/devimg-report.md
@@ -164,6 +177,18 @@ jobs:
           target/debug/devimg optimize --config examples/dogfood/devimg.toml
           target/debug/devimg check --config examples/dogfood/devimg.toml
           target/debug/devimg suggest --metadata-only --check --fail-on-severity warning --config examples/dogfood/devimg.toml
+          target/debug/devimg ai consent \
+            --config examples/dogfood/devimg.toml \
+            --ai-provider openai \
+            --model openai-dry-run-model \
+            --dry-run \
+            --output "${RUNNER_TEMP}/dogfood-openai-consent.json"
+          target/debug/devimg ai consent \
+            --config examples/dogfood/devimg.toml \
+            --ai-provider anthropic \
+            --model anthropic-dry-run-model \
+            --dry-run \
+            --output "${RUNNER_TEMP}/dogfood-anthropic-consent.json"
           target/debug/devimg manifest export \
             --manifest examples/dogfood/public/images/devimg-manifest.json \
             --format typescript \
@@ -191,4 +216,6 @@ jobs:
             --output examples/dogfood/.devimg/review.html
           test -s examples/dogfood/public/images/devimg-manifest.json
           test -s "${RUNNER_TEMP}/dogfood.generated.ts"
+          test -s "${RUNNER_TEMP}/dogfood-openai-consent.json"
+          test -s "${RUNNER_TEMP}/dogfood-anthropic-consent.json"
           test -s examples/dogfood/.devimg/review.html

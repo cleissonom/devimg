@@ -1,3 +1,4 @@
+mod ai;
 mod budget;
 mod check;
 mod compare;
@@ -17,6 +18,11 @@ mod suggest;
 mod transform;
 mod warnings;
 
+pub use ai::{
+    ai_consent_preview_to_json, build_ai_consent_preview, AiConsentOptions, AiConsentPreview,
+    AiGeneratedOutput, AiProvider, AiProviderClient, AiProviderResponse, AiSelectedFile,
+    MockAiProviderClient,
+};
 pub use compare::{
     compare_manifests, manifest_compare_to_json, ManifestCompare, ManifestCompareChange,
     ManifestCompareMetadataChange, ManifestCompareOptions, ManifestCompareOutput,
