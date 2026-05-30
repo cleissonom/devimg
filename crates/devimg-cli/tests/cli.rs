@@ -10,12 +10,14 @@ fn help_and_usage_exit_codes_are_stable() {
     assert_code(run(["doctor", "--help"]), 0);
     assert_code(run(["agent", "--help"]), 0);
     assert_code(run(["agent", "task", "--help"]), 0);
+    assert_code(run(["ai", "--help"]), 0);
+    assert_code(run(["ai", "consent", "--help"]), 0);
     assert_code(run(["suggest", "--help"]), 0);
     assert_code(run(["compare", "--help"]), 0);
     assert_code(run(["review", "--help"]), 0);
     let version = run(["--version"]);
     assert_status(&version, 0);
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.2"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.2.3"));
     assert_code(run([] as [&str; 0]), 2);
     assert_code(run(["unknown"]), 2);
 }
@@ -1737,6 +1739,361 @@ fn agent_task_custom_config_and_agent_guidance_are_distinct() {
     assert!(generic_stdout.contains("Generic Markdown final response"));
     assert_ne!(codex_stdout, claude_stdout);
     assert_ne!(claude_stdout, generic_stdout);
+    cleanup(&project);
+}
+
+#[test]
+fn ai_consent_dry_run_works_without_keys_for_both_providers() {
+    let project = fixture_project("ai_consent_dry_run", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    for (provider, model) in [
+        ("openai", "openai-dry-run-model"),
+        ("anthropic", "anthropic-dry-run-model"),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_devimg"))
+            .args([
+                "ai",
+                "consent",
+                "--config",
+                config.as_str(),
+                "--ai-provider",
+                provider,
+                "--model",
+                model,
+                "--dry-run",
+            ])
+            .env_remove("OPENAI_API_KEY")
+            .env_remove("ANTHROPIC_API_KEY")
+            .output()
+            .expect("devimg runs");
+
+        assert_status(&output, 0);
+        let document: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("consent JSON parses");
+        assert_eq!(document["provider"], provider);
+        assert_eq!(document["model"], model);
+        assert_eq!(document["command"], "devimg ai consent");
+        assert_eq!(document["mode"], "metadata-only");
+        assert_eq!(document["dry_run"], true);
+        assert_eq!(document["paths_included"], true);
+        assert_eq!(document["image_bytes_included"], false);
+        assert_eq!(document["manifest_readable"], false);
+        assert_eq!(
+            document["source_files"][0]["path"],
+            "assets/images/sample.png"
+        );
+        assert_eq!(document["source_files"][0]["image_bytes_included"], false);
+        assert!(document["generated_outputs"]
+            .as_array()
+            .expect("generated outputs array")
+            .is_empty());
+    }
+
+    cleanup(&project);
+}
+
+#[test]
+fn ai_consent_requires_provider_keys_when_not_dry_run() {
+    let project = fixture_project("ai_consent_missing_keys", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    let openai = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "ai",
+            "consent",
+            "--config",
+            config.as_str(),
+            "--ai-provider",
+            "openai",
+            "--model",
+            "openai-model",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&openai, 2);
+    let openai_stderr = String::from_utf8_lossy(&openai.stderr);
+    assert!(openai_stderr.contains("OPENAI_API_KEY"));
+    assert!(!openai_stderr.contains("ANTHROPIC_API_KEY"));
+
+    let anthropic = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "ai",
+            "consent",
+            "--config",
+            config.as_str(),
+            "--ai-provider",
+            "anthropic",
+            "--model",
+            "anthropic-model",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&anthropic, 2);
+    let anthropic_stderr = String::from_utf8_lossy(&anthropic.stderr);
+    assert!(anthropic_stderr.contains("ANTHROPIC_API_KEY"));
+    assert!(!anthropic_stderr.contains("OPENAI_API_KEY"));
+
+    cleanup(&project);
+}
+
+#[test]
+fn ai_consent_never_prints_or_writes_fake_keys() {
+    let project = fixture_project("ai_consent_fake_key", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    for (provider, env_var, other_env_var, fake_key) in [
+        (
+            "openai",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "test-openai-secret-do-not-leak",
+        ),
+        (
+            "anthropic",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "test-anthropic-secret-do-not-leak",
+        ),
+    ] {
+        let preview = project.join(format!("{provider}-consent.json"));
+        let preview_arg = path_arg(preview.clone());
+        let output = Command::new(env!("CARGO_BIN_EXE_devimg"))
+            .args([
+                "ai",
+                "consent",
+                "--config",
+                config.as_str(),
+                "--ai-provider",
+                provider,
+                "--model",
+                "fake-model",
+                "--output",
+                preview_arg.as_str(),
+            ])
+            .env(env_var, fake_key)
+            .env_remove(other_env_var)
+            .output()
+            .expect("devimg runs");
+
+        assert_status(&output, 0);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!stdout.contains(fake_key));
+        assert!(!stderr.contains(fake_key));
+        let json = fs::read_to_string(&preview).expect("consent preview reads");
+        assert!(!json.contains(fake_key));
+        assert!(!json.contains(env_var));
+        let document: serde_json::Value = serde_json::from_str(&json).expect("consent JSON parses");
+        assert_eq!(document["provider"], provider);
+        assert_eq!(document["dry_run"], false);
+    }
+
+    cleanup(&project);
+}
+
+#[test]
+fn ai_consent_include_images_and_metadata_only_validation_are_stable() {
+    let project = fixture_project("ai_consent_include_images", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    let include_images = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "ai",
+            "consent",
+            "--config",
+            config.as_str(),
+            "--ai-provider",
+            "anthropic",
+            "--model",
+            "vision-preview",
+            "--include-images",
+            "--dry-run",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&include_images, 0);
+    let document: serde_json::Value =
+        serde_json::from_slice(&include_images.stdout).expect("consent JSON parses");
+    assert_eq!(document["mode"], "include-images");
+    assert_eq!(document["image_bytes_included"], true);
+    assert_eq!(document["source_files"][0]["image_bytes_included"], true);
+
+    let invalid = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "ai",
+            "consent",
+            "--config",
+            config.as_str(),
+            "--ai-provider",
+            "openai",
+            "--model",
+            "invalid-mode",
+            "--metadata-only",
+            "--include-images",
+            "--dry-run",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&invalid, 2);
+    assert!(String::from_utf8_lossy(&invalid.stderr)
+        .contains("--metadata-only cannot be combined with --include-images"));
+
+    cleanup(&project);
+}
+
+#[test]
+fn ai_consent_output_is_deterministic_and_refuses_overwrite() {
+    let project = fixture_project("ai_consent_output", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    let preview = project.join("ai-consent.json");
+    let preview_arg = path_arg(preview.clone());
+
+    assert_code(
+        Command::new(env!("CARGO_BIN_EXE_devimg"))
+            .args([
+                "ai",
+                "consent",
+                "--config",
+                config.as_str(),
+                "--ai-provider",
+                "openai",
+                "--model",
+                "dry-run-model",
+                "--dry-run",
+                "--output",
+                preview_arg.as_str(),
+            ])
+            .env_remove("OPENAI_API_KEY")
+            .env_remove("ANTHROPIC_API_KEY")
+            .output()
+            .expect("devimg runs"),
+        0,
+    );
+    let first = fs::read_to_string(&preview).expect("consent preview reads");
+
+    let refused = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "ai",
+            "consent",
+            "--config",
+            config.as_str(),
+            "--ai-provider",
+            "openai",
+            "--model",
+            "dry-run-model",
+            "--dry-run",
+            "--output",
+            preview_arg.as_str(),
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+    assert_status(&refused, 4);
+    assert_eq!(
+        fs::read_to_string(&preview).expect("consent preview reads"),
+        first
+    );
+
+    assert_code(
+        Command::new(env!("CARGO_BIN_EXE_devimg"))
+            .args([
+                "ai",
+                "consent",
+                "--config",
+                config.as_str(),
+                "--ai-provider",
+                "openai",
+                "--model",
+                "dry-run-model",
+                "--dry-run",
+                "--output",
+                preview_arg.as_str(),
+                "--force",
+            ])
+            .env_remove("OPENAI_API_KEY")
+            .env_remove("ANTHROPIC_API_KEY")
+            .output()
+            .expect("devimg runs"),
+        0,
+    );
+    assert_eq!(
+        fs::read_to_string(&preview).expect("forced consent preview reads"),
+        first
+    );
+    cleanup(&project);
+}
+
+#[test]
+fn ai_consent_preview_includes_generated_outputs_when_manifest_is_readable() {
+    let project = fixture_project("ai_consent_manifest", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+
+    assert_code(run(["optimize", "--config", config.as_str()]), 0);
+    let output = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args([
+            "ai",
+            "consent",
+            "--config",
+            config.as_str(),
+            "--ai-provider",
+            "anthropic",
+            "--model",
+            "dry-run-model",
+            "--dry-run",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .expect("devimg runs");
+
+    assert_status(&output, 0);
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("consent JSON parses");
+    assert_eq!(document["manifest_readable"], true);
+    assert_eq!(
+        document["generated_outputs"][0]["output_path"],
+        "public/images/generated/sample.project-card.64.webp"
+    );
+    assert_eq!(
+        document["manifest_path"],
+        "public/images/devimg-manifest.json"
+    );
+    assert_eq!(document["report_path"], "devimg-report.md");
+    cleanup(&project);
+}
+
+#[test]
+fn deterministic_commands_keep_provider_secrets_out_of_output() {
+    let project = fixture_project("deterministic_secret_env", "sample.png");
+    let config = path_arg(project.join("devimg.toml"));
+    let openai_key = "test-openai-secret";
+    let anthropic_key = "test-anthropic-secret";
+
+    let output = Command::new(env!("CARGO_BIN_EXE_devimg"))
+        .args(["optimize", "--config", config.as_str(), "--dry-run"])
+        .env("OPENAI_API_KEY", openai_key)
+        .env("ANTHROPIC_API_KEY", anthropic_key)
+        .output()
+        .expect("devimg runs");
+
+    assert_status(&output, 0);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stdout.contains(openai_key));
+    assert!(!stdout.contains(anthropic_key));
+    assert!(!stderr.contains(openai_key));
+    assert!(!stderr.contains(anthropic_key));
+    assert!(!project.join("devimg-report.md").exists());
+
     cleanup(&project);
 }
 

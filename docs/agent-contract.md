@@ -56,6 +56,15 @@ devimg suggest --metadata-only --markdown devimg-suggestions.md
 
 Suggestion items include severity, rationale, `affected_path`, `commands`, and `next_command` so agents can report concrete follow-up steps without inventing provider-backed fixes.
 
+Preview provider consent before any future provider-backed workflow:
+
+```bash
+devimg ai consent --ai-provider openai --model openai-dry-run-model --dry-run
+devimg ai consent --ai-provider anthropic --model anthropic-dry-run-model --dry-run
+```
+
+`devimg ai consent` writes deterministic consent metadata only. In `0.2.3`, it performs no OpenAI or Anthropic calls. Dry runs do not require API keys; non-dry-run previews validate `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` exists and still avoid network calls. Do not print or persist key values. Do not pass `--include-images` unless a human has explicitly approved image-byte inclusion for the future provider-backed command being previewed.
+
 Run this loop when image sources, config, generated variants, manifests, reports, or helper files may change:
 
 ```bash
@@ -86,6 +95,7 @@ If a TypeScript helper file was generated with `--typescript-helpers`, use that 
 
 - Do not overwrite existing `AGENTS.md`, `CLAUDE.md`, `.claude/commands/**`, `.claude/skills/**`, or `.codex/skills/**` unless the user explicitly asks.
 - Do not include secrets or personal data in reports, manifests, fixtures, logs, screenshots, or review artifacts.
+- Do not include `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or other provider secrets in consent preview artifacts, task files, suggestions, or final responses.
 - Do not add automatic PR commits from GitHub Actions.
 - Do not change release, installer, or package distribution behavior unless the task explicitly asks for it.
 

@@ -5,14 +5,15 @@ use std::path::{Path, PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use devimg_core::{
-    check_with_options, compare_manifests, doctor, doctor_report_to_json, inspect_image,
-    load_config, manifest_compare_to_json, manifest_export_to_json,
-    manifest_export_to_typescript_with_options, optimize, read_manifest, render_doctor_report,
-    render_manifest_compare_report, render_manifest_report, render_manifest_review,
-    render_run_report, render_suggestion_markdown, suggest, suggestion_report_to_json,
-    CheckOptions, DevimgError, DoctorManifestExportFormat, DoctorManifestExportOptions,
-    DoctorOptions, ManifestCompareOptions, ManifestExportOptions, ManifestReviewOptions,
-    ManifestTypescriptOptions, OptimizeOptions, SuggestOptions, SuggestionItem, SuggestionReport,
+    ai_consent_preview_to_json, build_ai_consent_preview, check_with_options, compare_manifests,
+    doctor, doctor_report_to_json, inspect_image, load_config, manifest_compare_to_json,
+    manifest_export_to_json, manifest_export_to_typescript_with_options, optimize, read_manifest,
+    render_doctor_report, render_manifest_compare_report, render_manifest_report,
+    render_manifest_review, render_run_report, render_suggestion_markdown, suggest,
+    suggestion_report_to_json, AiConsentOptions, AiProvider, CheckOptions, DevimgError,
+    DoctorManifestExportFormat, DoctorManifestExportOptions, DoctorOptions, ManifestCompareOptions,
+    ManifestExportOptions, ManifestReviewOptions, ManifestTypescriptOptions, OptimizeOptions,
+    SuggestOptions, SuggestionItem, SuggestionReport,
 };
 
 const DEFAULT_CONFIG_PATH: &str = "devimg.toml";
@@ -79,6 +80,7 @@ where
         Command::Suggest(args) => command_suggest(args),
         Command::Manifest(args) => command_manifest(args),
         Command::Agent(args) => command_agent(args),
+        Command::Ai(args) => command_ai(args),
     }
 }
 
@@ -109,6 +111,7 @@ enum Command {
     Suggest(SuggestArgs),
     Manifest(ManifestArgs),
     Agent(AgentArgs),
+    Ai(AiArgs),
 }
 
 #[derive(Debug, Args)]
@@ -241,6 +244,12 @@ struct AgentArgs {
     command: AgentCommand,
 }
 
+#[derive(Debug, Args)]
+struct AiArgs {
+    #[command(subcommand)]
+    command: AiCommand,
+}
+
 #[derive(Debug, Subcommand)]
 enum ManifestCommand {
     Export(ManifestExportArgs),
@@ -250,6 +259,11 @@ enum ManifestCommand {
 enum AgentCommand {
     Init(AgentInitArgs),
     Task(AgentTaskArgs),
+}
+
+#[derive(Debug, Subcommand)]
+enum AiCommand {
+    Consent(AiConsentArgs),
 }
 
 #[derive(Debug, Args)]
@@ -314,6 +328,32 @@ enum AgentTaskAgent {
     Codex,
     ClaudeCode,
     Generic,
+}
+
+#[derive(Debug, Args)]
+struct AiConsentArgs {
+    #[arg(long, default_value = DEFAULT_CONFIG_PATH)]
+    config: PathBuf,
+    #[arg(long = "ai-provider", value_enum)]
+    ai_provider: AiProviderArg,
+    #[arg(long)]
+    model: String,
+    #[arg(long)]
+    metadata_only: bool,
+    #[arg(long)]
+    include_images: bool,
+    #[arg(long)]
+    dry_run: bool,
+    #[arg(long)]
+    output: Option<PathBuf>,
+    #[arg(long)]
+    force: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum AiProviderArg {
+    Openai,
+    Anthropic,
 }
 
 fn command_init(args: InitArgs) -> Result<(), CliError> {
@@ -643,6 +683,75 @@ fn command_agent(args: AgentArgs) -> Result<(), CliError> {
         AgentCommand::Init(args) => command_agent_init(args),
         AgentCommand::Task(args) => command_agent_task(args),
     }
+}
+
+fn command_ai(args: AiArgs) -> Result<(), CliError> {
+    match args.command {
+        AiCommand::Consent(args) => command_ai_consent(args),
+    }
+}
+
+fn command_ai_consent(args: AiConsentArgs) -> Result<(), CliError> {
+    if args.model.trim().is_empty() {
+        return Err(CliError::Core(DevimgError::config(
+            &args.config,
+            "--model cannot be empty",
+        )));
+    }
+    if args.metadata_only && args.include_images {
+        return Err(CliError::Core(DevimgError::config(
+            &args.config,
+            "--metadata-only cannot be combined with --include-images",
+        )));
+    }
+
+    let provider = args.ai_provider.into_core();
+    if !args.dry_run {
+        validate_ai_provider_key(&args.config, provider)?;
+    }
+    if let Some(output) = &args.output {
+        if output.exists() && !args.force {
+            return Err(CliError::Core(DevimgError::UnsafeOverwrite {
+                path: output.clone(),
+            }));
+        }
+    }
+
+    let config = load_config(&args.config)?;
+    let preview = build_ai_consent_preview(
+        &config,
+        &AiConsentOptions {
+            provider,
+            model: args.model,
+            command: "devimg ai consent".to_string(),
+            config_path: args.config.clone(),
+            dry_run: args.dry_run,
+            include_images: args.include_images,
+            output_path: args.output.clone(),
+        },
+    )?;
+    let rendered = ai_consent_preview_to_json(&preview);
+
+    if let Some(output) = args.output {
+        write_text_file(&output, &rendered)?;
+        println!("Created {}", output.display());
+    } else {
+        print!("{rendered}");
+    }
+
+    Ok(())
+}
+
+fn validate_ai_provider_key(config_path: &Path, provider: AiProvider) -> Result<(), CliError> {
+    let env_var = provider.credential_env_var();
+    let value = std::env::var(env_var).unwrap_or_default();
+    if value.trim().is_empty() {
+        return Err(CliError::Core(DevimgError::config(
+            config_path,
+            format!("{env_var} is required for devimg ai consent unless --dry-run is passed"),
+        )));
+    }
+    Ok(())
 }
 
 fn command_agent_task(args: AgentTaskArgs) -> Result<(), CliError> {
@@ -1024,6 +1133,15 @@ impl SuggestFailSeverity {
             Self::Advisory => "advisory",
             Self::Warning => "warning",
             Self::Error => "error",
+        }
+    }
+}
+
+impl AiProviderArg {
+    fn into_core(self) -> AiProvider {
+        match self {
+            Self::Openai => AiProvider::Openai,
+            Self::Anthropic => AiProvider::Anthropic,
         }
     }
 }

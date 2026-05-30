@@ -4,6 +4,14 @@ DevImg follows a lightweight changelog during pre-1.0 development. Add unrelease
 
 ## Unreleased
 
+## 0.2.3
+
+- Added `devimg ai consent` for deterministic OpenAI/Anthropic consent previews.
+- Added provider identifiers, provider-specific API key validation, metadata-only default previews, `--include-images` preview metadata, and dry-run output that does not require keys.
+- Added mocked provider-client boundaries for future AI commands without adding SDK, HTTP, or network behavior.
+- Documented no-key-leak handling, no image bytes by default, and deferred real provider calls for later `0.2.x` AI commands.
+- Exposed the GitHub Action `binary-path` output and added AI consent dry-run dogfood coverage.
+
 ## 0.2.2
 
 - Added `devimg suggest --check` for read-only local and CI suggestion gates.

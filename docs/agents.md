@@ -88,6 +88,20 @@ Suggestions include severity, affected source/output metadata when DevImg can pr
 
 `suggest --metadata-only` is local-only. It does not call OpenAI, Anthropic, or any external provider, and it must not print or persist `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
 
+## Provider Consent Preview
+
+Use `devimg ai consent` when an agent or CI workflow needs a reviewed provider setup preview before future AI-backed commands:
+
+```bash
+devimg ai consent --ai-provider openai --model openai-dry-run-model --dry-run
+devimg ai consent --ai-provider anthropic --model anthropic-dry-run-model --dry-run
+devimg ai consent --ai-provider openai --model review-model --output /tmp/devimg-ai-consent.json
+```
+
+The command is deterministic and timestamp-free. It previews provider, model, command, config path, project root, metadata mode, dry-run status, output path, source files, manifest/report paths, and generated outputs from a readable manifest.
+
+In `0.2.3`, `ai consent` performs no provider call. Dry runs do not require API keys. Non-dry-run previews require `OPENAI_API_KEY` for OpenAI or `ANTHROPIC_API_KEY` for Anthropic, but DevImg must never print, persist, or include key values in artifacts. Metadata-only is the default; `--include-images` only changes preview metadata in this release and does not send bytes anywhere.
+
 ## Generated Instructions
 
 Use `devimg agent init` when a project does not already have image-pipeline agent guidance:

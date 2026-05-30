@@ -18,7 +18,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.2.2
+      - uses: cleissonom/devimg/action@v0.2.3
         with:
           mode: check
           export-output: lib/devimg.generated.ts
@@ -54,6 +54,14 @@ Export inputs:
 
 Set `review-output` when the workflow should produce a static visual review artifact. The Action runs `devimg review --manifest <manifest> --output <review-output>` after the main command and optional export check pass. `review-manifest` can override the manifest path used for the artifact; otherwise it defaults to `manifest-path`. `review-force: true` passes `--force` to replace an existing artifact. Pair this with `actions/upload-artifact` because the Action does not upload files automatically.
 
-The default `version` input is `v0.2.2`, which maps to release assets such as `devimg-linux-x86_64.tar.gz`. The Action downloads the matching `.sha256` file and verifies the archive before extraction.
+The default `version` input is `v0.2.3`, which maps to release assets such as `devimg-linux-x86_64.tar.gz`. The Action downloads the matching `.sha256` file and verifies the archive before extraction.
+
+The Action exposes these outputs:
+
+- `status`
+- `report-path`
+- `manifest-path`
+- `review-output`
+- `binary-path`: resolved CLI path. Downstream steps can use it for follow-up commands such as `devimg ai consent --dry-run` without re-resolving the binary.
 
 The Action does not post PR comments, commit generated image files, rewrite reports in check mode, or rewrite manifest helper files.

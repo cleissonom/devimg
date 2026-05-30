@@ -28,6 +28,20 @@ cargo run -p devimg -- suggest --metadata-only \
   --output /tmp/devimg-dogfood-suggestions.json \
   --markdown /tmp/devimg-dogfood-suggestions.md \
   --force
+cargo run -p devimg -- ai consent \
+  --config examples/dogfood/devimg.toml \
+  --ai-provider openai \
+  --model openai-dry-run-model \
+  --dry-run \
+  --output /tmp/devimg-dogfood-openai-consent.json \
+  --force
+cargo run -p devimg -- ai consent \
+  --config examples/dogfood/devimg.toml \
+  --ai-provider anthropic \
+  --model anthropic-dry-run-model \
+  --dry-run \
+  --output /tmp/devimg-dogfood-anthropic-consent.json \
+  --force
 cargo run -p devimg -- manifest export \
   --manifest examples/dogfood/public/images/devimg-manifest.json \
   --format typescript \
@@ -42,6 +56,6 @@ cargo run -p devimg -- review \
 
 The review artifact is derived output. Use the command above before taking screenshots for docs, release notes, or demos. If a screenshot is committed later, refresh it from the regenerated review artifact rather than editing it by hand.
 
-The suggestion gate is read-only and should stay in CI. The explicit suggestion artifact command writes to `/tmp` for local review; do not commit those files unless a later task intentionally promotes them.
+The suggestion gate is read-only and should stay in CI. The explicit suggestion and AI consent preview artifact commands write to `/tmp` for local review; do not commit those files unless a later task intentionally promotes them. Consent dry-runs require no API keys, include no image bytes by default, and perform no OpenAI or Anthropic calls in `0.2.3`.
 
 Use this example when changing DevImg behavior that affects hashed output filenames, source-specific paths, contain resizing, crop anchors, helper exports, review artifacts, or Action smoke coverage.

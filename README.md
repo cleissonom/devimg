@@ -299,6 +299,23 @@ The JSON output defaults to `devimg-suggestions.json` under the configured proje
 
 Suggestions include schema version, config path, mode, summary counts, affected source/output metadata when DevImg can prove it, `affected_path`, severity, rationale, structured `suggested_config` data, commands, and `next_command`. The output is deterministic and diffable, with no generated timestamp. When warnings are intentional, prefer narrow `[[warnings.acknowledge]]` entries with a reviewed reason; otherwise change source assets or config and regenerate.
 
+## AI Provider Consent
+
+Use `ai consent` to preview what a future provider-backed DevImg command would be allowed to send. In `0.2.3`, this command validates provider setup and writes a deterministic consent JSON preview only. It does not call OpenAI, Anthropic, or any external API.
+
+```bash
+devimg ai consent --ai-provider openai --model openai-dry-run-model --dry-run
+devimg ai consent --ai-provider anthropic --model anthropic-dry-run-model --dry-run
+devimg ai consent --ai-provider openai --model review-model --output /tmp/devimg-ai-consent.json
+devimg ai consent --ai-provider openai --model review-model --include-images --dry-run
+```
+
+The provider must be `openai` or `anthropic`, and `--model` is always explicit. Dry runs do not require API keys. Non-dry-run previews require a nonempty `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, but still make no network call in `0.2.3`. DevImg never prints or writes key values.
+
+Metadata-only is the default consent mode; `--metadata-only` is accepted for explicitness. `--include-images` only changes preview metadata in `0.2.3`; no image bytes are sent anywhere. `--metadata-only` cannot be combined with `--include-images`. `--output` writes the same deterministic JSON that stdout would show and refuses existing files unless `--force` is passed.
+
+The preview includes provider, model, command, config path, project root, mode, dry-run status, whether paths and image bytes are included, output path, source files, manifest/report paths, and generated outputs when the configured manifest is readable.
+
 ## Framework Diagnostics
 
 `devimg doctor` detects common frontend projects from config files and `package.json` dependencies:
@@ -330,6 +347,7 @@ fit = "contain"
 - `optimize --dry-run` plans work without writing files.
 - Existing unmanaged outputs are not overwritten unless config `overwrite = true` or CLI `--allow-overwrite` is used.
 - `suggest --metadata-only` writes reviewable suggestion files only; it does not call providers or edit config, sources, generated variants, manifests, reports, or helper files.
+- `ai consent --dry-run` validates provider consent previews without API keys. Non-dry-run consent preview validates the provider key exists but still performs no provider call in `0.2.3`.
 - Re-encoding strips metadata by default. `strip_metadata = false` is parsed, but the current encoders do not preserve source metadata.
 - `check` fails on missing outputs, stale manifests, modified outputs, outdated config hashes, and byte budget violations. Add `--fail-on-warning` when advisory warnings should fail CI, or `--no-report` when a wrapper needs read-only validation without rewriting the Markdown report.
 
@@ -393,7 +411,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: cleissonom/devimg/action@v0.2.2
+      - uses: cleissonom/devimg/action@v0.2.3
         with:
           mode: check
           export-output: lib/devimg.generated.ts
@@ -408,7 +426,7 @@ jobs:
           if-no-files-found: error
 ```
 
-This repository's CI smoke test builds the CLI, runs the local composite Action with `uses: ./action`, and passes `binary-path: target/debug/devimg`. Public repositories can pin the release tag shown above; the Action downloads the matching GitHub Release archive and verifies its SHA-256 checksum before running.
+This repository's CI smoke test builds the CLI, runs the local composite Action with `uses: ./action`, and passes `binary-path: target/debug/devimg`. Public repositories can pin the release tag shown above; the Action downloads the matching GitHub Release archive and verifies its SHA-256 checksum before running. The Action exposes `binary-path` as an output so downstream workflow steps can call the resolved CLI directly, for example to run `devimg ai consent --dry-run` without API keys.
 
 When `export-output` is set, the Action runs `devimg manifest export --check` after `devimg check --no-report` and fails if the checked-in helper file is missing or stale. It does not rewrite the helper. Set `export-typescript-helpers: "true"` when the checked-in TypeScript file was generated with `--typescript-helpers`.
 
@@ -441,8 +459,8 @@ cargo install devimg
 Create a version tag that matches the workspace version and push it after publishing crates:
 
 ```bash
-git tag v0.2.2
-git push origin v0.2.2
+git tag v0.2.3
+git push origin v0.2.3
 ```
 
 The release workflow builds Linux, macOS, and Windows archives, attaches SHA-256 checksums, and publishes a GitHub Release. See `docs/release.md` for install and release details.

@@ -28,7 +28,7 @@ inputs:
   version:
     description: Release version to download when no binary is available
     required: false
-    default: v0.2.2
+    default: v0.2.3
   report-path:
     description: Markdown report path to append to the job summary
     required: false
@@ -81,6 +81,9 @@ outputs:
   review-output:
     description: Static HTML review artifact path when generated
     value: ${{ steps.run.outputs.review-output }}
+  binary-path:
+    description: Resolved devimg binary path
+    value: ${{ steps.resolve.outputs.bin }}
 
 runs:
   using: composite
