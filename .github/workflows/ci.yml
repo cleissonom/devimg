@@ -163,6 +163,7 @@ jobs:
           target/debug/devimg optimize --config examples/dogfood/devimg.toml --dry-run
           target/debug/devimg optimize --config examples/dogfood/devimg.toml
           target/debug/devimg check --config examples/dogfood/devimg.toml
+          target/debug/devimg suggest --metadata-only --check --fail-on-severity warning --config examples/dogfood/devimg.toml
           target/debug/devimg manifest export \
             --manifest examples/dogfood/public/images/devimg-manifest.json \
             --format typescript \

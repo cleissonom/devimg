@@ -137,6 +137,8 @@ Done criteria:
 
 Goal: make deterministic suggestions easy to interpret in local development and CI.
 
+Status: implemented for the `0.2.2` release as a local-only suggestion check and dogfood workflow.
+
 Scope:
 
 - Add `devimg suggest --check`.

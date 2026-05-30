@@ -22,6 +22,12 @@ Run the local loop:
 cargo run -p devimg -- doctor --config examples/dogfood/devimg.toml
 cargo run -p devimg -- optimize --config examples/dogfood/devimg.toml
 cargo run -p devimg -- check --config examples/dogfood/devimg.toml
+cargo run -p devimg -- suggest --metadata-only --check --fail-on-severity warning --config examples/dogfood/devimg.toml
+cargo run -p devimg -- suggest --metadata-only \
+  --config examples/dogfood/devimg.toml \
+  --output /tmp/devimg-dogfood-suggestions.json \
+  --markdown /tmp/devimg-dogfood-suggestions.md \
+  --force
 cargo run -p devimg -- manifest export \
   --manifest examples/dogfood/public/images/devimg-manifest.json \
   --format typescript \
@@ -35,5 +41,7 @@ cargo run -p devimg -- review \
 ```
 
 The review artifact is derived output. Use the command above before taking screenshots for docs, release notes, or demos. If a screenshot is committed later, refresh it from the regenerated review artifact rather than editing it by hand.
+
+The suggestion gate is read-only and should stay in CI. The explicit suggestion artifact command writes to `/tmp` for local review; do not commit those files unless a later task intentionally promotes them.
 
 Use this example when changing DevImg behavior that affects hashed output filenames, source-specific paths, contain resizing, crop anchors, helper exports, review artifacts, or Action smoke coverage.
