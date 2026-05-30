@@ -4,7 +4,7 @@ Run `devimg agent task` before changing source images, `devimg.toml`, generated 
 
 The full agent contract lives in `docs/agent-contract.md`. Use it as the file ownership and safety policy when a project has DevImg-managed assets.
 
-Roadmap planning for AI-assisted features lives in `docs/roadmap-v0.2-ai.md`. `devimg agent task` is local-only task context, while provider-backed review, alt-text, and draft commands are explicit opt-in workflows. AI agents should rely on deterministic DevImg commands by default and treat any generated prose as reviewable suggestions, not source-of-truth pipeline behavior.
+Roadmap planning lives in `docs/roadmap.md`. `devimg agent task` is local-only task context, while provider-backed review, alt-text, and draft commands are explicit opt-in workflows. AI agents should rely on deterministic DevImg commands by default and treat any generated prose as reviewable suggestions, not source-of-truth pipeline behavior.
 
 Recommended loop:
 
